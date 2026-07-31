@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
 import { LessonNode } from '../components/LessonNode';

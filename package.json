@@ -1,0 +1,22 @@
+{
+  "name": "enlaza",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Enlaza — microaprendizaje de LSC con validación por visión computacional",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev -w @enlaza/api\" \"npm:dev -w @enlaza/web\"",
+    "build": "npm run build -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "seed": "npm run seed -w @enlaza/api",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router';
 import { LearningPath } from './pages/LearningPath';
 import { Lesson } from './pages/Lesson';
 import { Progress } from './pages/Progress';

@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink } from 'react-router';
 import { Logo } from './Logo';
 import styles from './Sidebar.module.css';
 
@@ -26,11 +26,11 @@ export function Sidebar() {
               key={item.label}
               to={item.to}
               end={item.to === '/'}
-              className={({ isActive }) =>
+              className={({ isActive }: { isActive: boolean }) =>
                 isActive ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem
               }
             >
-              {({ isActive }) => (
+              {({ isActive }: { isActive: boolean }) => (
                 <>
                   <span className={isActive ? styles.dotActive : styles.dot} />
                   <span>{item.label}</span>

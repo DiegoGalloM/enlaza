@@ -1,7 +1,7 @@
 {
-  "name": "web",
+  "name": "@enlaza/web",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
   "dependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "react-router": "^8.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

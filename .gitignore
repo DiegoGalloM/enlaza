@@ -8,6 +8,13 @@ dist/
 dist-ssr/
 *.local
 
+# Local databases
+apps/api/data/
+
+# Playwright
+test-results/
+playwright-report/
+
 # Env
 .env
 .env.*

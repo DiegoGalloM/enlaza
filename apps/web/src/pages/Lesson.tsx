@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import styles from './Lesson.module.css';
