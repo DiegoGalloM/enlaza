@@ -134,7 +134,10 @@ export function usePracticeSession(
       detector.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [sign?.id, sign?.type, templates, onFrame, sign]);
+    // `sign` is intentionally keyed by id/type only: the caller recreates the
+    // object every render and we must not restart the camera on re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sign?.id, sign?.type, templates, onFrame]);
 
   return { cameraState, cameraError, status, best, hasTemplate, videoRef, canvasRef, finalScore };
 }

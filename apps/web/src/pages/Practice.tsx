@@ -17,7 +17,7 @@ export function Practice() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const requestedSignId = searchParams.get('sign');
-  const signs = data?.signs ?? [];
+  const signs = useMemo(() => data?.signs ?? [], [data]);
   const currentSign = signs.find((s) => s.id === requestedSignId) ?? signs[0] ?? null;
 
   const session = usePracticeSession(
