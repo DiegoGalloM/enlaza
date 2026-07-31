@@ -1,0 +1,172 @@
+/* La práctica con cámara es siempre oscura, en ambos temas (regla del tema). */
+.page {
+  min-height: 100vh;
+  background: var(--color-canvas);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 28px 24px 48px;
+}
+
+.topBar {
+  width: 960px;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.backButton {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-1);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+  flex: none;
+}
+
+.topText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.gloss {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.videoCard {
+  width: 960px;
+  max-width: 100%;
+  background: var(--color-screen);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.videoFrame {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--color-surface-2);
+  aspect-ratio: 16 / 9;
+  border: 3px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.videoFrameCorrect {
+  border-color: var(--color-green);
+}
+
+.videoFrameRetry {
+  border-color: var(--color-pink);
+}
+
+.video,
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Mirror so the user sees themselves as in a mirror. */
+  transform: scaleX(-1);
+}
+
+.videoNotice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: rgba(14, 16, 20, 0.7);
+  line-height: 1.7;
+}
+
+.statusRow {
+  display: flex;
+  justify-content: center;
+}
+
+.statusPill {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  padding: 12px 22px;
+  border-radius: var(--radius-pill);
+}
+
+.statusCorrect {
+  background: var(--color-green-chip-bg);
+  border-color: transparent;
+  color: var(--color-green-chip-text);
+  font-weight: 600;
+}
+
+.statusRetry {
+  background: var(--color-pink-chip-bg);
+  border-color: transparent;
+  color: var(--color-pink);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.error {
+  font-size: 14px;
+  color: var(--color-pink);
+}
+
+.noTemplate {
+  background: var(--color-surface-1);
+  border: 1px dashed var(--color-locked-border);
+  border-radius: 20px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.noTemplateText {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.stateMessage {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 80px 0;
+}

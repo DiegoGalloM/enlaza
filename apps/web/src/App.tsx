@@ -6,6 +6,8 @@ import { Lesson } from './pages/Lesson';
 import { Progress } from './pages/Progress';
 import { DesignTokens } from './pages/DesignTokens';
 import { Login } from './pages/Login';
+import { Practice } from './pages/Practice';
+import { Calibration } from './pages/Calibration';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -33,6 +35,22 @@ function App() {
             element={
               <RequireAuth>
                 <Lesson />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/leccion/:lessonId/practica"
+            element={
+              <RequireAuth>
+                <Practice />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/plantillas"
+            element={
+              <RequireAuth>
+                <Calibration />
               </RequireAuth>
             }
           />

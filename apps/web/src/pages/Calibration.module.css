@@ -1,0 +1,243 @@
+.page {
+  min-height: 100vh;
+  background: var(--color-canvas);
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.header {
+  width: 1100px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backLink {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.title {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
+.layout {
+  width: 1100px;
+  max-width: 100%;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.videoPanel {
+  flex: 1 1 520px;
+  min-width: 420px;
+  background: var(--color-screen);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.videoFrame {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--color-surface-2);
+  aspect-ratio: 16 / 9;
+}
+
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.handBadge,
+.handBadgeVisible {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(14, 16, 20, 0.75);
+  color: var(--color-text-muted);
+}
+
+.handBadgeVisible {
+  color: var(--color-green);
+}
+
+.recBadge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(74, 36, 54, 0.9);
+  color: var(--color-pink);
+}
+
+.captureBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.captureTitle {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.captureHint {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.message {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-blue);
+}
+
+.listPanel {
+  flex: 1 1 360px;
+  min-width: 320px;
+  background: var(--color-screen);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lessonPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pickerLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.select {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+.signList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.signRow,
+.signRowActive {
+  display: flex;
+  align-items: center;
+  border-radius: 14px;
+}
+
+.signRowActive {
+  background: var(--color-blue-tint);
+}
+
+.signButton {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-text);
+  text-align: left;
+}
+
+.signType {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.dotDone,
+.dotPending {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.dotDone {
+  background: var(--color-green);
+}
+
+.dotPending {
+  background: var(--color-border-strong);
+}
+
+.deleteButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  padding: 0 12px;
+}
+
+.deleteButton:hover {
+  color: var(--color-pink);
+}
+
+.ioRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hiddenInput {
+  display: none;
+}
