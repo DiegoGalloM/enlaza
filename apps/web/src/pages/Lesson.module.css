@@ -245,3 +245,40 @@
   margin-top: auto;
   width: 100%;
 }
+
+.stateMessage {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 60px 0;
+}
+
+.signList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.signChip {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-1);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 13px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.signChipMastered {
+  background: var(--color-green-chip-bg);
+  border-color: transparent;
+  color: var(--color-green-chip-text);
+}
+
+.signChipActive {
+  border-color: var(--color-blue);
+  color: var(--color-text);
+}

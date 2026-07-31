@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router';
 import { Logo } from './Logo';
+import { useAuth } from '../auth/AuthContext';
+import { useApi } from '../hooks/useApi';
+import { api } from '../api/client';
 import styles from './Sidebar.module.css';
 
-const STREAK_DAYS = 6;
-const STREAK_WEEK_LENGTH = 7;
+const WEEK_LENGTH = 7;
 
 const navItems = [
   { label: 'Mi ruta', to: '/' },
@@ -12,7 +14,22 @@ const navItems = [
   { label: 'Diccionario LSC', to: null },
 ];
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('');
+}
+
 export function Sidebar() {
+  const { user, logout } = useAuth();
+  const { data: progress } = useApi(() => api.progress());
+
+  const streakDays = progress?.streakDays ?? 0;
+  const activeDays = progress?.weekActivity.filter((d) => d.active).length ?? 0;
+
   return (
     <aside className={styles.sidebar}>
       <div className={styles.brand}>
@@ -38,7 +55,11 @@ export function Sidebar() {
               )}
             </NavLink>
           ) : (
-            <span key={item.label} className={`${styles.navItem} ${styles.navItemDisabled}`}>
+            <span
+              key={item.label}
+              className={`${styles.navItem} ${styles.navItemDisabled}`}
+              title="Disponible próximamente"
+            >
               <span className={styles.dot} />
               <span>{item.label}</span>
             </span>
@@ -48,22 +69,26 @@ export function Sidebar() {
 
       <div className={styles.streakCard}>
         <span className={styles.streakLabel}>Racha</span>
-        <span className={styles.streakValue}>{STREAK_DAYS} días</span>
+        <span className={styles.streakValue}>
+          {streakDays} {streakDays === 1 ? 'día' : 'días'}
+        </span>
         <div className={styles.streakBar}>
-          {Array.from({ length: STREAK_WEEK_LENGTH }, (_, i) => (
+          {Array.from({ length: WEEK_LENGTH }, (_, i) => (
             <span
               key={i}
-              className={i < STREAK_DAYS ? styles.streakSegmentActive : styles.streakSegment}
+              className={i < activeDays ? styles.streakSegmentActive : styles.streakSegment}
             />
           ))}
         </div>
       </div>
 
       <div className={styles.profile}>
-        <span className={styles.avatar}>MC</span>
+        <span className={styles.avatar}>{user ? initials(user.displayName) : '·'}</span>
         <div className={styles.profileText}>
-          <span className={styles.profileName}>Mariana C.</span>
-          <span className={styles.profileRole}>Enfermería · Nivel 1</span>
+          <span className={styles.profileName}>{user?.displayName ?? ''}</span>
+          <button type="button" className={styles.logout} onClick={logout}>
+            Cerrar sesión
+          </button>
         </div>
       </div>
     </aside>

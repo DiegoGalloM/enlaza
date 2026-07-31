@@ -1,34 +1,43 @@
-import { useNavigate } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
+import { useApi } from '../hooks/useApi';
+import { api } from '../api/client';
 import styles from './Lesson.module.css';
-
-const steps = [
-  {
-    number: 1,
-    chipBg: 'var(--color-blue-chip-bg)',
-    chipText: 'var(--color-blue-chip-text)',
-    label: 'Forma:',
-    text: 'índice, medio y pulgar extendidos; los otros dos recogidos.',
-  },
-  {
-    number: 2,
-    chipBg: 'var(--color-green-chip-bg)',
-    chipText: 'var(--color-green-chip-text)',
-    label: 'Ubicación:',
-    text: 'a la altura del pecho, ligeramente al centro.',
-  },
-  {
-    number: 3,
-    chipBg: 'var(--color-pink-chip-bg)',
-    chipText: 'var(--color-pink)',
-    label: 'Movimiento:',
-    text: 'dos flexiones de muñeca hacia abajo, sin mover el brazo.',
-  },
-];
 
 export function Lesson() {
   const navigate = useNavigate();
+  const { lessonId = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const { data, loading, error } = useApi(() => api.lesson(lessonId), [lessonId]);
+
+  if (loading || error || !data) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.card}>
+          <p className={styles.stateMessage}>{error ?? 'Cargando lección…'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { lesson, signs } = data;
+  const requestedSignId = searchParams.get('sign');
+  const currentSign =
+    signs.find((s) => s.id === requestedSignId) ?? signs.find((s) => !s.mastered) ?? signs[0];
+
+  if (!currentSign) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.card}>
+          <p className={styles.stateMessage}>Esta lección aún no tiene señas.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const masteredCount = signs.filter((s) => s.mastered).length;
+  const currentIndex = signs.findIndex((s) => s.id === currentSign.id);
 
   return (
     <div className={styles.page}>
@@ -44,10 +53,12 @@ export function Lesson() {
           </button>
           <div className={styles.progressBlock}>
             <div className={styles.progressLabels}>
-              <span className={styles.lessonName}>Números 1 – 20</span>
-              <span className={styles.signCount}>seña 13 de 20</span>
+              <span className={styles.lessonName}>{lesson.title}</span>
+              <span className={styles.signCount}>
+                seña {currentIndex + 1} de {signs.length}
+              </span>
             </div>
-            <ProgressBar percent={60} />
+            <ProgressBar percent={(masteredCount / signs.length) * 100} />
           </div>
           <span className={styles.timeless}>Sin límite de tiempo</span>
         </div>
@@ -60,52 +71,64 @@ export function Lesson() {
                   <polygon points="3,2 20,13 3,24" fill="var(--color-screen)" />
                 </svg>
               </span>
-              <span className={styles.videoCaption}>video de referencia — modelo sordo/a señante</span>
-              <span className={styles.videoTime}>0:04 · velocidad 0.5×</span>
+              <span className={styles.videoCaption}>
+                video de referencia — pendiente de grabación con modelo sordo/a señante
+              </span>
             </div>
             <div className={styles.videoActions}>
-              <Button variant="tinted">Ver en cámara lenta</Button>
-              <Button variant="outline">Vista de espejo</Button>
-              <Button variant="outline">Repetir</Button>
+              <Button variant="tinted" disabled>
+                Ver en cámara lenta
+              </Button>
+              <Button variant="outline" disabled>
+                Vista de espejo
+              </Button>
             </div>
           </div>
 
           <div className={styles.detail}>
             <div className={styles.signIntro}>
-              <span className={styles.eyebrow}>Seña</span>
-              <h1 className={styles.signWord}>Trece</h1>
-              <p className={styles.signDescription}>
-                Mano dominante al frente, palma hacia ti. Muestra tres dedos y baja la muñeca dos
-                veces con un movimiento corto.
-              </p>
+              <span className={styles.eyebrow}>
+                Seña · {currentSign.signType === 'static' ? 'estática' : 'dinámica'}
+              </span>
+              <h1 className={styles.signWord}>{currentSign.gloss}</h1>
+              <p className={styles.signDescription}>{currentSign.description}</p>
             </div>
 
-            <div className={styles.buildCard}>
-              <span className={styles.eyebrow}>Cómo se construye</span>
-              {steps.map((step) => (
-                <div key={step.number} className={styles.step}>
-                  <span
-                    className={styles.stepNumber}
-                    style={{ background: step.chipBg, color: step.chipText }}
-                  >
-                    {step.number}
-                  </span>
-                  <span className={styles.stepText}>
-                    <strong className={styles.stepLabel}>{step.label}</strong> {step.text}
-                  </span>
-                </div>
+            {!currentSign.validated && (
+              <div className={styles.tipCard}>
+                <span className={styles.tipDot} />
+                <span className={styles.tipText}>
+                  Contenido provisional: esta seña aún no ha sido validada con ICAL ni con
+                  personas sordas señantes de LSC. No la tomes como referencia definitiva.
+                </span>
+              </div>
+            )}
+
+            <div className={styles.signList}>
+              {signs.map((sign) => (
+                <button
+                  key={sign.id}
+                  type="button"
+                  onClick={() => navigate(`/leccion/${lessonId}?sign=${sign.id}`)}
+                  className={[
+                    styles.signChip,
+                    sign.mastered ? styles.signChipMastered : '',
+                    sign.id === currentSign.id ? styles.signChipActive : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
+                  {sign.gloss}
+                </button>
               ))}
             </div>
 
-            <div className={styles.tipCard}>
-              <span className={styles.tipDot} />
-              <span className={styles.tipText}>
-                En LSC los números 11 a 15 comparten esta flexión de muñeca. Reconocerla te ahorra
-                memorizar cinco señas por separado.
-              </span>
-            </div>
-
-            <Button variant="primary" size="lg" className={styles.practiceButton}>
+            <Button
+              variant="primary"
+              size="lg"
+              className={styles.practiceButton}
+              onClick={() => navigate(`/leccion/${lessonId}/practica?sign=${currentSign.id}`)}
+            >
               Practicar con cámara
             </Button>
           </div>

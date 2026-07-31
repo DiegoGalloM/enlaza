@@ -131,8 +131,17 @@
   font-weight: 500;
 }
 
-.profileRole {
+.logout {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--color-text-muted);
+}
+
+.logout:hover {
+  color: var(--color-pink);
 }

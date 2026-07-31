@@ -4,6 +4,14 @@
   gap: 6px;
 }
 
+.stateMessage {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 60px 0;
+}
+
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 11px;
