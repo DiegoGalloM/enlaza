@@ -1,0 +1,247 @@
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.title {
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+
+.row {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.card {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 26px;
+  display: flex;
+}
+
+.caption {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.cardTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.cardBody {
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+/* Level card */
+.levelCard {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.levelPercent {
+  font-family: var(--font-heading);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.levelLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.levelText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Streak card */
+.streakHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.streakNumber {
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.week {
+  display: flex;
+  gap: 8px;
+}
+
+.weekDay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.weekBarActive,
+.weekBarPending {
+  width: 100%;
+  height: 34px;
+  border-radius: 12px;
+}
+
+.weekBarActive {
+  background: var(--color-green);
+}
+
+.weekBarPending {
+  background: var(--color-surface-2);
+  border: 1px dashed var(--color-locked-border);
+}
+
+.weekLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+/* Milestone card */
+.milestoneCard {
+  background: #22303f;
+  border-radius: var(--radius-md);
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.milestoneEyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-blue);
+}
+
+.milestoneTitle {
+  font-family: var(--font-heading);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+
+.milestoneBody {
+  font-size: 15px;
+  color: var(--color-blue-chip-text);
+  line-height: 1.55;
+}
+
+.milestoneBar {
+  margin-top: auto;
+}
+
+/* Mastery */
+.masteryList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.masteryRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.masteryLabel {
+  width: 150px;
+  flex: none;
+  font-size: 15px;
+}
+
+.masteryBarTrack {
+  flex: 1;
+}
+
+.masteryPercent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  width: 40px;
+  text-align: right;
+}
+
+/* Achievements */
+.achievementRow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.achievementIcon,
+.achievementIconLocked {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.achievementIconLocked {
+  background: var(--color-surface-2);
+  border: 2px dashed var(--color-locked-border);
+}
+
+.achievementDot {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+}
+
+.achievementText {
+  display: flex;
+  flex-direction: column;
+}
+
+.achievementTitle {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.achievementTitleLocked {
+  font-size: 15px;
+  font-weight: 500;
+  color: #c0c4cb;
+}
+
+.achievementDetail {
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+}
+
+.achievementDetailLocked {
+  font-size: 13.5px;
+  color: #9aa0a9;
+}

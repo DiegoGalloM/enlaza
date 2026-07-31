@@ -1,0 +1,14 @@
+.shell {
+  min-height: 100vh;
+  background: var(--color-screen);
+  display: flex;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: 30px 36px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}

@@ -1,0 +1,19 @@
+.track {
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.fillBlue,
+.fillGreen {
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+
+.fillBlue {
+  background: var(--color-blue);
+}
+
+.fillGreen {
+  background: var(--color-green);
+}

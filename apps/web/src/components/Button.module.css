@@ -1,0 +1,48 @@
+.button {
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: var(--font-body);
+  white-space: nowrap;
+  border: none;
+  transition: opacity 0.15s ease;
+}
+
+.button:hover {
+  opacity: 0.9;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.primary {
+  background: var(--color-blue);
+  color: var(--color-blue-ink);
+  font-weight: 600;
+}
+
+.tinted {
+  background: var(--color-blue-tint-strong);
+  color: var(--color-blue-chip-text);
+  font-weight: 600;
+}
+
+.outline {
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.md {
+  font-size: 14px;
+  padding: 12px 20px;
+  min-height: 44px;
+}
+
+.lg {
+  font-size: 17px;
+  padding: 18px 28px;
+  min-height: 56px;
+}

@@ -1,0 +1,247 @@
+.page {
+  min-height: 100vh;
+  background: var(--color-screen);
+  display: flex;
+  justify-content: center;
+  padding: 36px 24px;
+}
+
+.card {
+  width: 1288px;
+  max-width: 100%;
+  height: fit-content;
+  background: var(--color-screen);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 28px 36px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.backButton {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-1);
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--color-text-secondary);
+  flex: none;
+}
+
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.progressLabels {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.lessonName {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.signCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.timeless {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  gap: 28px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.videoPanel {
+  flex: 1 1 520px;
+  min-width: 460px;
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.videoFrame {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-surface-2),
+    var(--color-surface-2) 7px,
+    #2a2f38 7px,
+    #2a2f38 14px
+  );
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.playButton {
+  width: 66px;
+  height: 66px;
+  border-radius: var(--radius-pill);
+  background: rgba(241, 239, 234, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoCaption {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #c9cdd4;
+  background: rgba(14, 16, 20, 0.7);
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+}
+
+.videoTime {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(14, 16, 20, 0.75);
+  color: #e6e3de;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+}
+
+.videoActions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail {
+  flex: 1 1 420px;
+  min-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.signIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.signWord {
+  font-size: 52px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.signDescription {
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.buildCard {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.stepNumber {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stepText {
+  font-size: 15px;
+  line-height: 1.55;
+  color: #e6e3de;
+}
+
+.stepLabel {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.tipCard {
+  background: var(--color-surface-2);
+  border-radius: 24px;
+  padding: 18px 20px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.tipDot {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-screen);
+  border: 2px solid var(--color-locked-border);
+}
+
+.tipText {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.practiceButton {
+  margin-top: auto;
+  width: 100%;
+}

@@ -1,0 +1,138 @@
+.sidebar {
+  width: 236px;
+  flex: none;
+  background: var(--color-surface-1);
+  border-right: 1px solid var(--color-border);
+  padding: 26px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+.navItemActive {
+  background: var(--color-blue-tint);
+  color: var(--color-blue-chip-text);
+  font-weight: 600;
+}
+
+.navItemDisabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.dot,
+.dotActive {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  flex: none;
+  background: var(--color-border-strong);
+}
+
+.dotActive {
+  background: var(--color-blue);
+}
+
+.streakCard {
+  margin-top: auto;
+  background: var(--color-surface-2);
+  border-radius: 24px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.streakLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.streakValue {
+  font-family: var(--font-heading);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.streakBar {
+  display: flex;
+  gap: 5px;
+}
+
+.streakSegment,
+.streakSegmentActive {
+  flex: 1;
+  height: 7px;
+  border-radius: var(--radius-pill);
+}
+
+.streakSegment {
+  background: #343a43;
+}
+
+.streakSegmentActive {
+  background: var(--color-green);
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-pill);
+  background: var(--color-blue-chip-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-blue-chip-text);
+  flex: none;
+}
+
+.profileText {
+  display: flex;
+  flex-direction: column;
+}
+
+.profileName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.profileRole {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
