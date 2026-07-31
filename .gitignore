@@ -1,0 +1,25 @@
+# Módulo 2 academic deliverables (interviews, personal data) — not part of the product repo.
+# See Enlaza/README.md section 11: not included/referenced publicly for now.
+Módulo 2/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
