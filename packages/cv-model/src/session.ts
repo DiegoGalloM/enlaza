@@ -1,7 +1,13 @@
 import { toFeatureVector } from './normalize';
 import { STATIC_THRESHOLD, classifyStatic } from './staticClassifier';
 import { DYNAMIC_THRESHOLD, classifyDynamic } from './dynamicClassifier';
-import type { ClassifyResult, HandFrame, SignTemplate, SignType } from './types';
+import type {
+  ClassifyResult,
+  DynamicTemplate,
+  HandFrame,
+  SignTemplate,
+  SignType,
+} from './types';
 
 export type SessionStatus =
   | 'waiting' // no hand detected yet
@@ -40,7 +46,7 @@ const FALLBACK_WINDOW_MS = 2000;
  */
 function defaultWindowMs(targetSignId: string, templates: SignTemplate[]): number {
   const durations = templates
-    .filter((t) => t.signId === targetSignId && t.type === 'dynamic')
+    .filter((t): t is DynamicTemplate => t.signId === targetSignId && t.type === 'dynamic')
     .map((t) => t.sourceMs)
     .filter((ms): ms is number => ms !== undefined);
   return durations.length > 0 ? Math.max(...durations) : FALLBACK_WINDOW_MS;
