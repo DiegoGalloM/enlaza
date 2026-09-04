@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AvatarScene } from '../avatar/scene';
 import { createAvatarScene } from '../avatar/scene';
+import type { LandmarksFile } from '../avatar/retarget';
+import { createSignPlayer } from '../avatar/retarget';
 import styles from './AvatarPoc.module.css';
+
+const SIGN_ID = 'hola';
 
 /**
  * Pantalla de prueba del PoC de avatar 3D (sin auth, como /design-tokens).
@@ -18,8 +22,13 @@ export function AvatarPoc() {
     let disposed = false;
     let rafId = 0;
 
-    createAvatarScene(canvas)
-      .then((scene) => {
+    Promise.all([
+      createAvatarScene(canvas),
+      fetch(`/avatar-poc/${SIGN_ID}.landmarks.json`).then(
+        (r) => r.json() as Promise<LandmarksFile>,
+      ),
+    ])
+      .then(([scene, landmarks]) => {
         if (disposed) {
           scene.dispose();
           return;
@@ -27,8 +36,11 @@ export function AvatarPoc() {
         sceneRef.current = scene;
         scene.resize(canvas.clientWidth, canvas.clientHeight);
         setStatus('listo');
-        let last = performance.now();
+        const player = createSignPlayer(scene.vrm, landmarks);
+        const start = performance.now();
+        let last = start;
         const loop = (now: number) => {
+          player.update((now - start) / 1000);
           scene.render((now - last) / 1000);
           last = now;
           rafId = requestAnimationFrame(loop);
@@ -52,7 +64,8 @@ export function AvatarPoc() {
     <main className={styles.page}>
       <h1>PoC avatar 3D</h1>
       <p className={styles.note}>
-        Pantalla de prueba — modelo de muestra del consorcio VRM, contenido sin validar por ICAL.
+        Pantalla de prueba — seña «{SIGN_ID}» retargeteada desde el video de referencia de ICAL a
+        un modelo de muestra del consorcio VRM. Contenido sin validar por ICAL.
       </p>
       <div className={styles.stage}>
         <canvas ref={canvasRef} className={styles.canvas} data-status={status} />
