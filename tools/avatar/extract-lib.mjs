@@ -46,18 +46,20 @@ export async function createExtractor({ log = () => {} } = {}) {
   const browser = await launchBrowser();
 
   return {
-    /** Extrae landmarks de un video (ruta relativa al repo). */
-    async extract(videoPath) {
+    /**
+     * Extrae landmarks de un video (ruta relativa al repo).
+     * `params` extra van a la query de extract-page.html (p. ej. rate, sig).
+     */
+    async extract(videoPath, params = {}) {
       const videoRel = path
         .relative(repoRoot, path.resolve(repoRoot, videoPath))
         .replaceAll('\\', '/');
+      const query = new URLSearchParams({ video: `/${videoRel}`, ...params });
       const page = await browser.newPage();
       try {
         page.on('console', (msg) => log(`[page] ${msg.text()}`));
-        await page.goto(
-          `http://127.0.0.1:${port}/tools/avatar/extract-page.html?video=/${videoRel}`,
-        );
-        await page.waitForFunction(() => window.__done, null, { timeout: 300_000 });
+        await page.goto(`http://127.0.0.1:${port}/tools/avatar/extract-page.html?${query}`);
+        await page.waitForFunction(() => window.__done, null, { timeout: 900_000 });
         const error = await page.evaluate(() => window.__error);
         if (error) throw new Error(`Fallo en la página de extracción:\n${error}`);
         return await page.evaluate(() => window.__result);

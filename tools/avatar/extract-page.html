@@ -9,7 +9,14 @@
 <script type="module">
   const params = new URLSearchParams(location.search);
   const videoUrl = params.get('video');
-  const fps = Number(params.get('fps') ?? 30);
+  // 0.15×: la detección (~230 ms/frame en CPU) bloquea la presentación de
+  // frames; a esa velocidad el muestreo efectivo ronda 14-30 fps. Para videos
+  // largos donde basta ~4 fps (p. ej. el abecedario) se puede pasar rate=1.
+  const rate = Number(params.get('rate') ?? 0.15);
+  // sig=1: además de landmarks, una firma de luminancia 8×8 de la franja
+  // derecha del frame (donde el video del abecedario rotula la letra) para
+  // poder segmentar por cambio de rótulo.
+  const wantSig = params.get('sig') === '1';
 
   const round = (n) => Math.round(n * 10000) / 10000;
   // Los campos del resultado holistic pueden venir como Landmark[] o Landmark[][]
@@ -51,15 +58,32 @@
     });
     if (!video.videoWidth) throw new Error('Video sin dimensiones: ¿codec no soportado?');
 
+    let sigCtx = null;
+    if (wantSig) {
+      const sigCanvas = document.createElement('canvas');
+      sigCanvas.width = 8;
+      sigCanvas.height = 8;
+      sigCtx = sigCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    const captionSignature = () => {
+      sigCtx.drawImage(
+        video,
+        video.videoWidth * 0.72, 0, video.videoWidth * 0.28, video.videoHeight,
+        0, 0, 8, 8,
+      );
+      const d = sigCtx.getImageData(0, 0, 8, 8).data;
+      return Array.from({ length: 64 }, (_, i) =>
+        Math.round((d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3),
+      );
+    };
+
     // Los mp4 de referencia no soportan seek preciso (un solo keyframe: el
     // frame decodificado no cambia al mover currentTime), así que se muestrea
     // durante reproducción real con requestVideoFrameCallback. playbackRate
     // reducido para que la detección alcance a correr en (casi) cada frame.
     const frames = [];
     let lastTs = 0;
-    // 0.15×: la detección (~230 ms/frame en CPU) bloquea la presentación de
-    // frames; a esta velocidad el muestreo efectivo queda cerca de 30 fps.
-    video.playbackRate = 0.15;
+    video.playbackRate = rate;
     await video.play();
     await new Promise((resolve, reject) => {
       const onFrame = (_now, meta) => {
@@ -67,14 +91,16 @@
           const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
           lastTs = ts;
           const r = landmarker.detectForVideo(video, ts);
-          frames.push({
+          const frame = {
             t: round(meta.mediaTime),
             poseWorld: pack(unwrap(r.poseWorldLandmarks), true),
             leftHand: pack(unwrap(r.leftHandLandmarks)),
             rightHand: pack(unwrap(r.rightHandLandmarks)),
             leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
             rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
-          });
+          };
+          if (sigCtx) frame.sig = captionSignature();
+          frames.push(frame);
         } catch (err) {
           reject(err);
           return;
