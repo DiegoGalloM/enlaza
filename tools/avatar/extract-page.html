@@ -51,32 +51,47 @@
     });
     if (!video.videoWidth) throw new Error('Video sin dimensiones: ¿codec no soportado?');
 
-    const seekTo = (t) =>
-      new Promise((resolve) => {
-        video.onseeked = resolve;
-        video.currentTime = t;
-      });
-
+    // Los mp4 de referencia no soportan seek preciso (un solo keyframe: el
+    // frame decodificado no cambia al mover currentTime), así que se muestrea
+    // durante reproducción real con requestVideoFrameCallback. playbackRate
+    // reducido para que la detección alcance a correr en (casi) cada frame.
     const frames = [];
-    const step = 1 / fps;
-    for (let t = 0; t < video.duration; t += step) {
-      await seekTo(Math.min(t, video.duration - 0.001));
-      const r = landmarker.detectForVideo(video, Math.round(t * 1000) + 1);
-      frames.push({
-        t: round(t),
-        poseWorld: pack(unwrap(r.poseWorldLandmarks), true),
-        leftHand: pack(unwrap(r.leftHandLandmarks)),
-        rightHand: pack(unwrap(r.rightHandLandmarks)),
-        leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
-        rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
-      });
-    }
+    let lastTs = 0;
+    // 0.15×: la detección (~230 ms/frame en CPU) bloquea la presentación de
+    // frames; a esta velocidad el muestreo efectivo queda cerca de 30 fps.
+    video.playbackRate = 0.15;
+    await video.play();
+    await new Promise((resolve, reject) => {
+      const onFrame = (_now, meta) => {
+        try {
+          const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
+          lastTs = ts;
+          const r = landmarker.detectForVideo(video, ts);
+          frames.push({
+            t: round(meta.mediaTime),
+            poseWorld: pack(unwrap(r.poseWorldLandmarks), true),
+            leftHand: pack(unwrap(r.leftHandLandmarks)),
+            rightHand: pack(unwrap(r.rightHandLandmarks)),
+            leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
+            rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
+          });
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        if (video.ended) resolve();
+        else video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+      video.onended = () => setTimeout(resolve, 100);
+    });
     landmarker.close();
 
     window.__result = {
       source: videoUrl.replace(/^\//, ''),
       landmarker: 'mediapipe holistic_landmarker float16/latest (tasks-vision 1.0.0)',
-      fps,
+      // fps efectivo del muestreo por rVFC (el parámetro fps es solo nominal)
+      fps: round(frames.length / video.duration),
       videoWidth: video.videoWidth,
       videoHeight: video.videoHeight,
       duration: round(video.duration),
