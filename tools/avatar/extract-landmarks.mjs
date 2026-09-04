@@ -3,7 +3,9 @@
  *
  * Uso: node tools/avatar/extract-landmarks.mjs <video> <salida.json>
  *   ej: node tools/avatar/extract-landmarks.mjs content/ical-2026-09/hola.mp4 \
- *         apps/web/public/avatar-poc/hola.landmarks.json
+ *         apps/web/public/avatar/hola.landmarks.json
+ * Registra la seña en apps/web/src/avatar/animations.ts para que la lección
+ * la muestre.
  *
  * Corre en Edge/Chrome headless vía Playwright (mismo stack que los e2e).
  * Requiere red (WASM y modelo .task vienen de CDN, igual que en la app).

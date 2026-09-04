@@ -1,15 +1,26 @@
+import { Suspense, lazy, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
+import { hasSignAnimation } from '../avatar/animations';
 import styles from './Lesson.module.css';
+
+// Carga perezosa: three.js solo se descarga en lecciones con avatar.
+const SignAvatar = lazy(() =>
+  import('../avatar/SignAvatar').then((m) => ({ default: m.SignAvatar })),
+);
+
+const SLOW_MOTION_SPEED = 0.35;
 
 export function Lesson() {
   const navigate = useNavigate();
   const { lessonId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const { data, loading, error } = useApi(() => api.lesson(lessonId), [lessonId]);
+  const [slowMotion, setSlowMotion] = useState(false);
+  const [mirrored, setMirrored] = useState(false);
 
   if (loading || error || !data) {
     return (
@@ -38,6 +49,7 @@ export function Lesson() {
 
   const masteredCount = signs.filter((s) => s.mastered).length;
   const currentIndex = signs.findIndex((s) => s.id === currentSign.id);
+  const hasAvatar = hasSignAnimation(currentSign.id);
 
   return (
     <div className={styles.page}>
@@ -65,22 +77,44 @@ export function Lesson() {
 
         <div className={styles.body}>
           <div className={styles.videoPanel}>
-            <div className={styles.videoFrame}>
-              <span className={styles.playButton}>
-                <svg width="22" height="26" viewBox="0 0 22 26" aria-hidden="true">
-                  <polygon points="3,2 20,13 3,24" fill="var(--color-screen)" />
-                </svg>
-              </span>
-              <span className={styles.videoCaption}>
-                video de referencia — pendiente de grabación con modelo sordo/a señante
-              </span>
-            </div>
+            {hasAvatar ? (
+              <div className={styles.avatarFrame}>
+                <Suspense fallback={null}>
+                  <SignAvatar
+                    signId={currentSign.id}
+                    speed={slowMotion ? SLOW_MOTION_SPEED : 1}
+                    mirrored={mirrored}
+                  />
+                </Suspense>
+              </div>
+            ) : (
+              <div className={styles.videoFrame}>
+                <span className={styles.playButton}>
+                  <svg width="22" height="26" viewBox="0 0 22 26" aria-hidden="true">
+                    <polygon points="3,2 20,13 3,24" fill="var(--color-screen)" />
+                  </svg>
+                </span>
+                <span className={styles.videoCaption}>
+                  seña sin avatar todavía — pendiente de procesar su video de referencia
+                </span>
+              </div>
+            )}
             <div className={styles.videoActions}>
-              <Button variant="tinted" disabled>
-                Ver en cámara lenta
+              <Button
+                variant="tinted"
+                disabled={!hasAvatar}
+                aria-pressed={slowMotion}
+                onClick={() => setSlowMotion((v) => !v)}
+              >
+                {slowMotion ? 'Velocidad normal' : 'Ver en cámara lenta'}
               </Button>
-              <Button variant="outline" disabled>
-                Vista de espejo
+              <Button
+                variant="outline"
+                disabled={!hasAvatar}
+                aria-pressed={mirrored}
+                onClick={() => setMirrored((v) => !v)}
+              >
+                {mirrored ? 'Vista normal' : 'Vista de espejo'}
               </Button>
             </div>
           </div>
