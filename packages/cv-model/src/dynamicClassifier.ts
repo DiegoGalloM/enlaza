@@ -69,8 +69,14 @@ export function classifyDynamic(
     .sort((a, b) => b.score - a.score);
 }
 
-export function buildDynamicTemplate(signId: string, frames: number[][]): DynamicTemplate {
-  return { signId, type: 'dynamic', frames: resampleSequence(frames) };
+export function buildDynamicTemplate(
+  signId: string,
+  frames: number[][],
+  sourceMs?: number,
+): DynamicTemplate {
+  const template: DynamicTemplate = { signId, type: 'dynamic', frames: resampleSequence(frames) };
+  if (sourceMs !== undefined) template.sourceMs = sourceMs;
+  return template;
 }
 
 /** Convenience: does this sequence match the target sign above the threshold? */

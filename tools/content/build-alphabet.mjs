@@ -191,9 +191,11 @@ export async function buildAlphabet(extractor) {
       throw new Error(`Letra ${letter} (${describe(segment)}): solo ${vectors.length} frames con mano.`);
     }
     const signId = signIdFor(i);
+    const withHand = segment.filter((f) => f[`${side}Hand`]);
+    const sourceMs = Math.round((withHand[withHand.length - 1].t - withHand[0].t) * 1000);
     templates.push(
       DYNAMIC_LETTERS.has(letter)
-        ? buildDynamicTemplate(signId, vectors)
+        ? buildDynamicTemplate(signId, vectors, sourceMs)
         : buildStaticTemplate(signId, stillestWindow(vectors, STATIC_WINDOW)),
     );
     console.log(

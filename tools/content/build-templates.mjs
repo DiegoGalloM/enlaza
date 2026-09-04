@@ -2,6 +2,7 @@
  * Pipeline reproducible video → plantillas de señas para @enlaza/cv-model.
  *
  * Uso: npx vite-node tools/content/build-templates.mjs [courtesy|alphabet|all]
+ *                                                     [--only <signId> ...]
  * (vite-node —incluido con vitest— porque cv-model usa imports TS sin
  * extensión, que el type-stripping nativo de Node no resuelve)
  *
@@ -9,6 +10,9 @@
  *   (una por seña de la lección lsc-cortesia).
  * - alphabet: content/ical-2026-09/raw-content/abecedarioLSC.mp4 (gitignorado)
  *   → plantillas estáticas/dinámicas de las letras (lecciones lsc-alfabeto-*).
+ * - --only: empaqueta EXACTAMENTE las señas indicadas y reemplaza el bundle en
+ *   vez de mezclarlo. Sirve para dejar una sola plantilla en la demo mientras
+ *   ICAL da retroalimentación sobre ella, antes de publicar el lote completo.
  *
  * La salida se mezcla por signId en apps/web/public/templates/lsc-bundled.json
  * (formato TemplateStore v1, el mismo del export/import de /plantillas), que
@@ -44,25 +48,30 @@ const COURTESY = [
   signId: `lsc-cortesia-${i}`,
 }));
 
-async function buildCourtesy(extractor) {
+async function buildCourtesy(extractor, wanted) {
   const templates = [];
-  for (const { video, signId } of COURTESY) {
+  for (const { video, signId } of COURTESY.filter((c) => !wanted || wanted.has(c.signId))) {
     const result = await extractor.extract(video);
     const side = chooseHand(result.frames);
     if (!side) throw new Error(`Sin manos detectadas en ${video}`);
-    const vectors = result.frames.map((f) => frameVector(f, side)).filter(Boolean);
+    const withHand = result.frames.filter((f) => f[`${side}Hand`]);
+    const vectors = withHand.map((f) => frameVector(f, side));
     if (vectors.length < 8) throw new Error(`Muy pocos frames con mano en ${video}`);
-    templates.push(buildDynamicTemplate(signId, vectors));
+    // Duración de la seña tal como se capturó: la ventana de práctica se
+    // dimensiona con ella (ver defaultWindowMs en cv-model).
+    const sourceMs = Math.round((withHand[withHand.length - 1].t - withHand[0].t) * 1000);
+    templates.push(buildDynamicTemplate(signId, vectors, sourceMs));
     console.log(
-      `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ${vectors.length} frames)`,
+      `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ` +
+        `${vectors.length} frames, ${(sourceMs / 1000).toFixed(1)}s)`,
     );
   }
   return templates;
 }
 
-function mergeAndWrite(newTemplates) {
+function mergeAndWrite(newTemplates, replace) {
   let existing = [];
-  if (fs.existsSync(OUT_FILE)) {
+  if (!replace && fs.existsSync(OUT_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
       if (parsed.version === 1 && Array.isArray(parsed.templates)) existing = parsed.templates;
@@ -78,7 +87,11 @@ function mergeAndWrite(newTemplates) {
     version: 1,
     source:
       'Derivadas de los videos de referencia de ICAL con tools/content/build-templates.mjs. ' +
-      'Contenido provisional, sin validar por ICAL ni por la comunidad sorda (validated=0).',
+      'Contenido provisional, sin validar por ICAL ni por la comunidad sorda (validated=0).' +
+      (replace
+        ? ' Bundle parcial (--only): solo las señas listadas aquí se validan con la cámara; ' +
+          'las demás quedan sin plantilla hasta que esta se revise.'
+        : ''),
     templates,
   };
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
@@ -86,18 +99,28 @@ function mergeAndWrite(newTemplates) {
   console.log(`OK: ${templates.length} plantillas en ${path.relative(repoRoot, OUT_FILE)}`);
 }
 
-const what = process.argv[2] ?? 'all';
+const args = process.argv.slice(2);
+const onlyIndex = args.indexOf('--only');
+const only = onlyIndex === -1 ? null : new Set(args.slice(onlyIndex + 1));
+if (only && only.size === 0) throw new Error('--only necesita al menos un signId');
+const what = onlyIndex === 0 ? 'all' : (args[0] ?? 'all');
+
 const extractor = await createExtractor();
 try {
   const templates = [];
   if (what === 'courtesy' || what === 'all') {
     console.log('Cortesía:');
-    templates.push(...(await buildCourtesy(extractor)));
+    templates.push(...(await buildCourtesy(extractor, only)));
   }
   if (what === 'alphabet' || what === 'all') {
-    templates.push(...(await buildAlphabet(extractor)));
+    const letters = await buildAlphabet(extractor);
+    templates.push(...(only ? letters.filter((t) => only.has(t.signId)) : letters));
   }
-  mergeAndWrite(templates);
+  if (only) {
+    const missing = [...only].filter((id) => !templates.some((t) => t.signId === id));
+    if (missing.length > 0) throw new Error(`--only sin resultado para: ${missing.join(', ')}`);
+  }
+  mergeAndWrite(templates, Boolean(only));
 } finally {
   await extractor.close();
 }
