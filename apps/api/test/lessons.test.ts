@@ -23,47 +23,48 @@ describe('computeStatuses', () => {
 });
 
 describe('GET /api/lessons', () => {
-  it('returns the 7 MVP lessons with sign counts', async () => {
+  it('returns the MVP lessons in the ICAL order with sign counts', async () => {
     const app = await testApp();
     const res = await app.inject({ method: 'GET', url: '/api/lessons?language=lsc' });
     expect(res.statusCode).toBe(200);
     const { lessons } = res.json() as {
       lessons: { slug: string; signCount: number; status: string }[];
     };
-    expect(lessons).toHaveLength(7);
-    expect(lessons[0]).toMatchObject({ slug: 'alfabeto-1', signCount: 13, status: 'unlocked' });
+    expect(lessons).toHaveLength(8);
+    // Orden pedagógico ICAL/FENASCOL: bautizo → cortesía → abecedario.
+    expect(lessons[0]).toMatchObject({ slug: 'bautizo', signCount: 1, status: 'unlocked' });
+    expect(lessons[1]).toMatchObject({ slug: 'cortesia', signCount: 10 });
     expect(lessons.map((l) => l.slug)).toEqual([
+      'bautizo',
+      'cortesia',
       'alfabeto-1',
       'alfabeto-2',
-      'saludos',
       'numeros',
       'preguntas',
       'salud',
       'emociones',
     ]);
     // 27 letters total across both alphabet lessons (design: "27 letras").
-    expect(lessons[0]!.signCount + lessons[1]!.signCount).toBe(27);
+    expect(lessons[2]!.signCount + lessons[3]!.signCount).toBe(27);
   });
 
   it('reflects per-user progress once signs are mastered', async () => {
     const app = await testApp();
     const token = await registerUser(app);
 
-    // Master all 13 signs of alfabeto-1.
-    for (let i = 0; i < 13; i++) {
-      await app.inject({
-        method: 'POST',
-        url: '/api/attempts',
-        headers: auth(token),
-        payload: { signId: `lsc-alfabeto-1-${i}`, correct: true, score: 0.97 },
-      });
-    }
+    // Master the single bautizo sign.
+    await app.inject({
+      method: 'POST',
+      url: '/api/attempts',
+      headers: auth(token),
+      payload: { signId: 'lsc-bautizo-0', correct: true, score: 0.97 },
+    });
 
     const res = await app.inject({ method: 'GET', url: '/api/lessons', headers: auth(token) });
     const { lessons } = res.json() as {
       lessons: { slug: string; masteredCount: number; status: string }[];
     };
-    expect(lessons[0]).toMatchObject({ masteredCount: 13, status: 'completed' });
+    expect(lessons[0]).toMatchObject({ masteredCount: 1, status: 'completed' });
     expect(lessons[1]!.status).toBe('unlocked');
     expect(lessons[2]!.status).toBe('locked');
   });
@@ -72,13 +73,13 @@ describe('GET /api/lessons', () => {
 describe('GET /api/lessons/:id', () => {
   it('returns the sign list, flagged as not yet validated', async () => {
     const app = await testApp();
-    const res = await app.inject({ method: 'GET', url: '/api/lessons/lsc-saludos' });
+    const res = await app.inject({ method: 'GET', url: '/api/lessons/lsc-cortesia' });
     expect(res.statusCode).toBe(200);
     const { signs } = res.json() as {
       signs: { gloss: string; signType: string; validated: boolean; mastered: boolean }[];
     };
-    expect(signs).toHaveLength(8);
-    expect(signs[0]!.gloss).toBe('Hola');
+    expect(signs).toHaveLength(10);
+    expect(signs[0]!.gloss).toBe('Buenos días');
     expect(signs.every((s) => s.validated === false)).toBe(true);
     expect(signs.every((s) => s.mastered === false)).toBe(true);
   });
