@@ -30,3 +30,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Contenido para no redistirbuir
+content/ical-2026-09/raw-content/
