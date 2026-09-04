@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  Página que ejecuta MediaPipe Holistic Landmarker sobre un video servido
+  por extract-landmarks.mjs. No se usa directamente: la carga Playwright.
+  Parámetros de query: ?video=<ruta>&fps=<n>
+-->
+<meta charset="utf-8" />
+<video id="v" muted playsinline></video>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const videoUrl = params.get('video');
+  const fps = Number(params.get('fps') ?? 30);
+
+  const round = (n) => Math.round(n * 10000) / 10000;
+  // Los campos del resultado holistic pueden venir como Landmark[] o Landmark[][]
+  // según la versión; unwrap toma la primera detección en ambos casos.
+  const unwrap = (field) => {
+    if (!field || field.length === 0) return null;
+    const first = field[0];
+    return Array.isArray(first) ? (first.length ? first : null) : field;
+  };
+  const pack = (lms, withVis) =>
+    lms
+      ? lms.map((p) =>
+          withVis
+            ? [round(p.x), round(p.y), round(p.z), round(p.visibility ?? 0)]
+            : [round(p.x), round(p.y), round(p.z)],
+        )
+      : null;
+
+  async function main() {
+    const { FilesetResolver, HolisticLandmarker } = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/+esm'
+    );
+    const vision = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/wasm',
+    );
+    const landmarker = await HolisticLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task',
+      },
+      runningMode: 'VIDEO',
+    });
+
+    const video = document.getElementById('v');
+    video.src = videoUrl;
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve;
+      video.onerror = () => reject(new Error(`No se pudo decodificar ${videoUrl}`));
+    });
+    if (!video.videoWidth) throw new Error('Video sin dimensiones: ¿codec no soportado?');
+
+    const seekTo = (t) =>
+      new Promise((resolve) => {
+        video.onseeked = resolve;
+        video.currentTime = t;
+      });
+
+    const frames = [];
+    const step = 1 / fps;
+    for (let t = 0; t < video.duration; t += step) {
+      await seekTo(Math.min(t, video.duration - 0.001));
+      const r = landmarker.detectForVideo(video, Math.round(t * 1000) + 1);
+      frames.push({
+        t: round(t),
+        poseWorld: pack(unwrap(r.poseWorldLandmarks), true),
+        leftHand: pack(unwrap(r.leftHandLandmarks)),
+        rightHand: pack(unwrap(r.rightHandLandmarks)),
+        leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
+        rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
+      });
+    }
+    landmarker.close();
+
+    window.__result = {
+      source: videoUrl.replace(/^\//, ''),
+      landmarker: 'mediapipe holistic_landmarker float16/latest (tasks-vision 1.0.0)',
+      fps,
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+      duration: round(video.duration),
+      poseFormat: '[x, y, z, visibility] world (metros, origen en caderas)',
+      handFormat: '[x, y, z] — *Hand: imagen normalizada; *HandWorld: metros, origen en la mano',
+      frames,
+    };
+    window.__done = true;
+  }
+
+  main().catch((err) => {
+    window.__error = String(err?.stack ?? err);
+    window.__done = true;
+  });
+</script>
