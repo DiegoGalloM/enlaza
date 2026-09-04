@@ -40,7 +40,19 @@ Video de YouTube: https://youtu.be/JMraBJsA9oI — fuente provisional, sin verif
 
 ## Referencia de configuración manual (Oviedo)
 
-El libro completo — Alejandro Oviedo, *Apuntes para una gramática de la lengua de señas colombiana* (2001) — está en `content/ical-2026-09/raw-content/460631745-gramatica-oviedo-pdf.pdf`. Es un libro largo; **no hace falta que Diego extraiga nada a mano**: la tarea para quien procese este brief es localizar dentro del archivo la sección sobre configuración manual (orientación/forma de la mano) y citar aquí, en este documento, solo ese fragmento — nunca reproducir ni procesar el libro completo en un archivo que se vaya a commitear.
+El libro completo — Alejandro Oviedo, *Apuntes para una gramática de la lengua de señas colombiana* (2001) — está en `content/ical-2026-09/raw-content/460631745-gramatica-oviedo-pdf.pdf` (PDF escaneado sin capa de texto; localizado leyendo las páginas como imagen).
+
+Fragmentos relevantes (solo la cita corta, nunca el libro completo en el repo):
+
+Sobre la configuración manual como componente diferenciador — capítulo 3, «La matriz articulatoria (I): el componente CM», pág. 65:
+
+> «**Componente CM** abrevia "componente configuración manual". Del análisis de las posturas adoptadas por las manos se encargará este capítulo. Esas posturas son, con seguridad, el componente más complejo, y con mayor capacidad diferenciadora, de todos los que intervienen en la conformación de las señas.»
+
+Sobre la orientación como parámetro propio (lo que exige que las plantillas de reconocimiento capturen orientación explícitamente, no solo la forma general) — capítulo 4, «El componente orientación (OR)», pág. 109:
+
+> «El tercer y último componente de la matriz articulatoria es la orientación (OR), que da cuenta de la posición relativa de la mano articuladora en el espacio. […] la mano es concebida como un sólido dotado de seis lados: palma, dorso, puntas, base, cúbito y radio. Si especificamos hacia dónde se orientan por lo menos dos de esos seis lados, podremos conocer la forma en que se dispone el articulador.»
+
+Esto respalda la decisión del cv-model de **no** eliminar la rotación en plano al normalizar (ver `packages/cv-model/src/normalize.ts`): señas como Q/R o C/O se distinguen principalmente por orientación.
 
 ## Carpeta gitignorada — qué va y qué no
 
