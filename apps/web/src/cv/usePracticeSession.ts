@@ -17,6 +17,11 @@ interface PracticeSession {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   /** Confirmed score when status === 'correct'. */
   finalScore: number | null;
+  /**
+   * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
+   * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
+   */
+  retry: () => void;
 }
 
 /** MediaPipe hand skeleton (pairs of landmark indices). */
@@ -69,6 +74,14 @@ export function usePracticeSession(
   const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
+  const validatorRef = useRef<SessionValidator | null>(null);
+
+  const retry = useCallback(() => {
+    validatorRef.current?.reset();
+    setStatus('waiting');
+    setBest(null);
+    setFinalScore(null);
+  }, []);
 
   const onFrame = useCallback(
     (validator: SessionValidator) => (frame: HandFrame | null) => {
@@ -127,6 +140,7 @@ export function usePracticeSession(
           signType,
           migrated.length > 0 ? mergeTemplates(templates, migrated) : templates,
         );
+        validatorRef.current = validator;
         setHasTemplate(validator.hasTemplates());
         await detector.start(video, onFrame(validator));
         if (!cancelled) setCameraState('ready');
@@ -146,6 +160,7 @@ export function usePracticeSession(
 
     return () => {
       cancelled = true;
+      validatorRef.current = null;
       detector.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
@@ -154,5 +169,15 @@ export function usePracticeSession(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sign?.id, sign?.type, templates, onFrame]);
 
-  return { cameraState, cameraError, status, best, hasTemplate, videoRef, canvasRef, finalScore };
+  return {
+    cameraState,
+    cameraError,
+    status,
+    best,
+    hasTemplate,
+    videoRef,
+    canvasRef,
+    finalScore,
+    retry,
+  };
 }

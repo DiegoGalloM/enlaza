@@ -204,6 +204,11 @@ Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Bueno
 - Pedir que se regraben las plantillas: pierde trabajo del usuario sin necesidad.
 - Suponer 16:9 también para las locales: la cámara que las grabó es casi seguro la del mismo dispositivo, y su proporción se puede leer.
 
+### D34. "Reintentar la seña" sin recargar ni reabrir la cámara
+**Qué:** al validar una seña, la práctica ofrece "Reintentar la seña". Reinicia el validador (incluida la ventana de frames de las dinámicas) y el estado en pantalla, con la cámara y el detector abiertos. Cada acierto se registra como un intento propio.
+**Por qué:** para practicar varias veces o buscar un mejor nivel (Bien → Excelente) había que refrescar la página, lo que reabre la cámara y recarga el detector. Registrar cada acierto no duplica el progreso: el API inserta el intento en el historial y el dominio de la seña es `INSERT OR IGNORE`.
+**Detalle:** en una seña estática, si la mano sigue en la pose al pulsar el botón, vuelve a validar en cuanto se sostienen los 8 frames. Es el mismo criterio de siempre, no un atajo.
+
 ---
 
 ## Un párrafo de síntesis

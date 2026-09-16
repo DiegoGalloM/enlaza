@@ -70,6 +70,14 @@ export function Practice() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.status]);
 
+  // Otro intento de la misma seña: cada acierto se registra como intento
+  // propio (el API guarda el historial y no duplica el dominio de la seña).
+  function retrySign() {
+    session.retry();
+    setAttemptSaved(false);
+    setSaveError(null);
+  }
+
   // Reset per-sign state when moving to another sign.
   useEffect(() => {
     setAttemptSaved(false);
@@ -156,6 +164,9 @@ export function Practice() {
         {session.status === 'correct' && (
           <div className={styles.actions}>
             {saveError && <p className={styles.error}>{saveError}</p>}
+            <Button variant="outline" size="lg" onClick={retrySign}>
+              Reintentar la seña
+            </Button>
             {nextSign ? (
               <Button
                 variant="primary"

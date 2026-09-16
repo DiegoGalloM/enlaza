@@ -54,12 +54,17 @@ function installLegacyTemplates(): void {
   );
 }
 
-function installFakeDetector(): { emit: (frame: HandFrame | null) => void } {
+function installFakeDetector(): {
+  emit: (frame: HandFrame | null) => void;
+  starts: () => number;
+} {
   let listener: FrameListener | null = null;
+  let starts = 0;
   window.__enlazaFakeDetector = () => ({
     needsCamera: false,
     aspect: ASPECT,
     start: async (_video, onFrame) => {
+      starts++;
       listener = onFrame;
     },
     stop: () => {
@@ -70,6 +75,7 @@ function installFakeDetector(): { emit: (frame: HandFrame | null) => void } {
     emit: (frame) => {
       listener?.(frame);
     },
+    starts: () => starts,
   };
 }
 
@@ -119,6 +125,55 @@ describe('Practice', () => {
     });
     // Offers the next unmastered sign of the lesson.
     expect(await screen.findByRole('button', { name: /Siguiente seña: B/ })).toBeInTheDocument();
+  });
+
+  it('permite reintentar la seña validada sin reiniciar la cámara', async () => {
+    signInStorage();
+    installTemplates();
+    const detector = installFakeDetector();
+    apiMock.lesson.mockResolvedValue(lessonDetailFixture);
+    apiMock.recordAttempt.mockResolvedValue({
+      signId: 's1',
+      mastered: true,
+      lesson: { id: 'l1', masteredCount: 1, signCount: 2, completed: false },
+    });
+
+    renderPractice();
+    await screen.findByText(/Muestra tu mano/);
+    await waitFor(() =>
+      expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
+    );
+    const holdSign = async () => {
+      await act(async () => {
+        for (let i = 0; i < 9; i++) {
+          detector.emit({ landmarks: poseA, handedness: 'Right', timestampMs: i * 33, aspect: ASPECT });
+        }
+      });
+    };
+
+    await holdSign();
+    await screen.findByText(/¡Correcta! Seña A validada/);
+    await waitFor(() => expect(apiMock.recordAttempt).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Reintentar la seña' }).click();
+    });
+    // Vuelve a esperar la seña: ya no dice "Correcta" ni ofrece reintentar.
+    expect(await screen.findByText(/Muestra tu mano/)).toBeInTheDocument();
+    expect(screen.queryByText(/¡Correcta!/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar la seña' })).not.toBeInTheDocument();
+
+    // Un solo frame no basta: la validación empezó de cero.
+    await act(async () => {
+      detector.emit({ landmarks: poseA, handedness: 'Right', timestampMs: 0, aspect: ASPECT });
+    });
+    expect(screen.queryByText(/¡Correcta!/)).not.toBeInTheDocument();
+
+    await holdSign();
+    await screen.findByText(/¡Correcta! Seña A validada/);
+    // Cada acierto es un intento propio, y la cámara nunca se reinició.
+    await waitFor(() => expect(apiMock.recordAttempt).toHaveBeenCalledTimes(2));
+    expect(detector.starts()).toBe(1);
   });
 
   it('suggests a retry when the user holds the wrong sign', async () => {
