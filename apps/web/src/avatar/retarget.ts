@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
+import { cleanAnimation, type RawTrack } from './cleanup';
 
 /**
  * Retargeting de landmarks de MediaPipe Holistic a un humanoide VRM.
@@ -160,59 +161,71 @@ export function retargetFrame(frame: LandmarkFrame): BoneRotations {
   return out;
 }
 
+/**
+ * Pose de reposo por hueso, para los tramos sin detección (p. ej. la mano
+ * que cuelga fuera de cuadro). Brazos abajo junto al cuerpo, dedos
+ * ligeramente flexionados como una mano relajada; el resto en identidad.
+ */
+export function restRotation(bone: string): THREE.Quaternion {
+  const side = bone.startsWith('left') ? 'left' : bone.startsWith('right') ? 'right' : null;
+  if (!side) return new THREE.Quaternion();
+  const sgn = side === 'left' ? 1 : -1;
+  const part = bone.slice(side.length);
+  if (part === 'UpperArm') {
+    return new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(sgn, 0, 0),
+      new THREE.Vector3(sgn * 0.2, -1, 0.05).normalize(),
+    );
+  }
+  if (/^(Index|Middle|Ring|Little)/.test(part)) {
+    return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -sgn), 0.25);
+  }
+  return new THREE.Quaternion();
+}
+
 export interface SignPlayer {
   /** Aplica la pose interpolada para el tiempo dado (en segundos, en loop). */
   update(elapsedSeconds: number): void;
+  /** Duración de un ciclo, incluida la transición de regreso al inicio. */
   duration: number;
 }
 
 /**
- * Precalcula las rotaciones por frame (rellenando huecos de detección con el
- * último valor conocido) y las reproduce interpoladas sobre el rig normalizado.
+ * Retargetea cada frame, limpia la animación (huecos, jitter, espaciado
+ * irregular, quietud y cierre del bucle; ver cleanup.ts) y la reproduce
+ * interpolada sobre el rig normalizado.
  */
 export function createSignPlayer(vrm: VRM, data: LandmarksFile): SignPlayer {
-  const perFrame: BoneRotations[] = [];
-  const lastKnown: BoneRotations = new Map();
-  const allBones = new Set<string>();
-
-  for (const frame of data.frames) {
-    const rotations = retargetFrame(frame);
-    for (const [bone, q] of rotations) {
-      lastKnown.set(bone, q);
-      allBones.add(bone);
-    }
-    perFrame.push(new Map(lastKnown));
+  const perFrame = data.frames.map(retargetFrame);
+  const bones = new Set(perFrame.flatMap((rotations) => [...rotations.keys()]));
+  const rawTracks = new Map<string, RawTrack>();
+  for (const bone of bones) {
+    rawTracks.set(bone, perFrame.map((rotations) => rotations.get(bone) ?? null));
   }
-  // Relleno hacia atrás: huesos sin detección en los primeros frames.
-  for (const frames of perFrame) {
-    for (const bone of allBones) {
-      if (!frames.has(bone)) frames.set(bone, lastKnown.get(bone)!);
-    }
-  }
+  const clip = cleanAnimation(
+    data.frames.map((f) => f.t),
+    rawTracks,
+    restRotation,
+  );
 
   const nodes = new Map<string, THREE.Object3D>();
-  for (const bone of allBones) {
+  for (const bone of clip.tracks.keys()) {
     const node = vrm.humanoid.getNormalizedBoneNode(bone as VRMHumanBoneName);
     if (node) nodes.set(bone, node);
   }
 
-  const duration = data.frames.length / data.fps;
-  const scratch = new THREE.Quaternion();
-
+  const duration = clip.frameCount / clip.fps;
   return {
     duration,
     update(elapsedSeconds: number) {
-      const t = ((elapsedSeconds % duration) + duration) % duration;
-      const exact = t * data.fps;
-      const i = Math.min(Math.floor(exact), perFrame.length - 1);
-      const next = Math.min(i + 1, perFrame.length - 1);
-      const alpha = exact - i;
+      const exact = (((elapsedSeconds % duration) + duration) % duration) * clip.fps;
+      const i = Math.floor(exact) % clip.frameCount;
+      // El último frame es la pose inicial (cierre del bucle): envolver a 0 es continuo.
+      const next = (i + 1) % clip.frameCount;
+      const alpha = exact - Math.floor(exact);
       for (const [bone, node] of nodes) {
-        const a = perFrame[i].get(bone);
-        const b = perFrame[next].get(bone);
-        if (!a || !b) continue;
-        scratch.slerpQuaternions(a, b, alpha);
-        node.quaternion.copy(scratch);
+        const track = clip.tracks.get(bone)!;
+        node.quaternion.slerpQuaternions(track[i], track[next], alpha);
       }
     },
   };
