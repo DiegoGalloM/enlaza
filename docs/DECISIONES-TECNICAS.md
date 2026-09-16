@@ -176,7 +176,33 @@ Las decisiones del avatar (extracción, limpieza de la animación, retargeting, 
 | 4:3 | 0.60–0.62 | sí, pero al filo del umbral |
 
 Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Buenos días).
-**Riesgo abierto:** las features usan coordenadas normalizadas por ancho y alto de la imagen, así que una cámara con otra proporción deforma la mano. La app pide 960×540 (16:9), pero una webcam que solo dé 4:3 queda al filo. Corregirlo cambia la definición de las features e invalida las plantillas grabadas en `/plantillas`, así que se deja como decisión pendiente. Tampoco se ha medido con otra persona: 0.69 es el techo con la misma señante, y la precisión real solo se sabe probando con usuarios.
+**Riesgo de cámara 4:3:** resuelto en D33. **Sigue abierto:** no se ha medido con otra persona; el techo con la misma señante es el punto de referencia, y la precisión real solo se sabe probando con usuarios.
+
+### D32. El puntaje se muestra como nivel en palabras, no como porcentaje
+**Qué:** al validar, la práctica muestra "¡Correcta! · Bien / Muy bien / Excelente" en vez de "· 66%". `scoreLevel` (cv-model, `quality.ts`) divide en tercios el tramo entre el umbral de aceptación y el techo práctico de cada tipo de seña. Dinámica: 0.60–0.72, el techo medido con la señante de Hola (0.69 antes de D33). Estática: 0.92–0.99, un techo hipotético por calibrar. El puntaje crudo se sigue guardando en el intento.
+**Por qué:** el puntaje de DTW es `1 / (1 + distancia)` y nunca llega a 1 con landmarks reales; ni la propia referencia pasa de 0.72. Mostrado como porcentaje, un 66% (cerca del máximo alcanzable) se leía como una nota baja o como "66% de certeza", que no es.
+**Descartado:** reescalar a un porcentaje 0–100 (seguiría pareciendo certeza) y ocultar el nivel (se pierde retroalimentación útil para mejorar).
+
+### D33. Features independientes de la proporción de la cámara (v2), con migración automática
+**Qué:** `toFeatureVector` multiplica x y z por la proporción de la imagen (ancho/alto) antes de normalizar, y cada `HandFrame` trae esa proporción, que es obligatoria. Las plantillas pasan a formato versión 2 (`FEATURE_VERSION`):
+- **Incluidas con la app:** se regeneran con la proporción del video fuente.
+- **Grabadas en `/plantillas` (v1):** se migran solas al abrir la cámara en la práctica o en la calibración, con la proporción de esa cámara, y se borra la copia v1.
+- **Archivos v1 importados de otro dispositivo:** se migran suponiendo 16:9, lo que la app pide a la cámara.
+
+**Por qué:** MediaPipe normaliza x por el ancho y y por el alto (z va en la escala de x), así que la misma mano queda deformada de forma distinta en una cámara 16:9 que en una 4:3. Con la plantilla de Hola, una webcam 4:3 quedaba al filo del umbral (0.60–0.62).
+
+**Resultado medido** (`diagnose-practice.mjs`, misma señante; sin falsos positivos, el máximo bajó de 0.50 a 0.45):
+
+| Escenario | Antes (v1) | Ahora (v2) |
+|---|---|---|
+| Cámara 16:9 | 0.66–0.69 | 0.66–0.72 |
+| Cámara 4:3 | 0.60–0.62 | 0.68–0.73 |
+
+**Migración exacta, no aproximada:** un vector v1 guarda (punto − muñeca) / escala. Al escalar x y z y renormalizar por el nuevo largo muñeca→nudillo medio (que se lee del propio vector), la escala original se cancela y el resultado es idéntico a recalcular desde los landmarks, con error < 1e-9 en las pruebas. En promedios (estáticas) y secuencias remuestreadas (dinámicas) es una aproximación muy cercana. La proporción no se guarda por plantilla: con features v2 ya no hace falta, y la versión del archivo basta para saber si hay que migrar.
+
+**Descartado:**
+- Pedir que se regraben las plantillas: pierde trabajo del usuario sin necesidad.
+- Suponer 16:9 también para las locales: la cámara que las grabó es casi seguro la del mismo dispositivo, y su proporción se puede leer.
 
 ---
 

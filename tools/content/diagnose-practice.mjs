@@ -34,13 +34,18 @@ const bundle = JSON.parse(
 const template = bundle.templates.find((t) => t.signId === signId);
 
 /** Frames de cámara simulados: [{ tMs, frame | null }]. */
-function timeline(frames, { speed = 1, cut = Infinity, repeat = 1, gapMs = 800 } = {}) {
+function timeline(result, { speed = 1, cut = Infinity, repeat = 1, gapMs = 800 } = {}) {
   const out = [];
   let offset = 0;
   for (let r = 0; r < repeat; r++) {
-    const part = frames.filter((f) => f.t <= cut);
+    const part = result.frames.filter((f) => f.t <= cut);
     for (const f of part) {
-      out.push({ tMs: offset + (f.t * 1000) / speed, lm: f.landmarks, hand: f.handedness });
+      out.push({
+        tMs: offset + (f.t * 1000) / speed,
+        lm: f.landmarks,
+        hand: f.handedness,
+        aspect: result.cropW / result.height,
+      });
     }
     const end = offset + (part[part.length - 1].t * 1000) / speed;
     // La mano sale de cuadro entre repeticiones (y al final).
@@ -56,7 +61,7 @@ function replay(events) {
   let validatedAt = null;
   for (const e of events) {
     const verdict = e.lm
-      ? validator.feed({ landmarks: e.lm, handedness: e.hand, timestampMs: e.tMs })
+      ? validator.feed({ landmarks: e.lm, handedness: e.hand, timestampMs: e.tMs, aspect: e.aspect })
       : validator.feedEmpty();
     if (verdict.best?.signId === signId) best = Math.max(best, verdict.best.score);
     if (verdict.status === 'correct' && validatedAt === null) validatedAt = e.tMs;
@@ -99,7 +104,7 @@ try {
   for (const [camera, result] of Object.entries(cameras)) {
     console.log(`Cámara ${camera}:`);
     for (const [label, opts] of scenarios) {
-      const { best, validatedAt } = replay(timeline(result.frames, opts));
+      const { best, validatedAt } = replay(timeline(result, opts));
       const verdict = validatedAt !== null ? `VALIDA a los ${(validatedAt / 1000).toFixed(1)} s` : 'NO VALIDA';
       console.log(`  ${verdict.padEnd(20)} ${label.padEnd(40)} mejor puntaje ${best.toFixed(3)}`);
     }

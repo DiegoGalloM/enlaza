@@ -13,6 +13,21 @@ export interface HandDetector {
   stop(): void;
   /** True if this detector drives its own frames and needs no camera. */
   readonly needsCamera: boolean;
+  /**
+   * Proporción (ancho/alto) de las imágenes de un detector sin cámara. Con
+   * cámara se lee del video (ver cameraAspect).
+   */
+  readonly aspect?: number;
+}
+
+/**
+ * Proporción de la imagen que ve el detector, o null si aún no se conoce.
+ * Hace falta para migrar plantillas grabadas antes de la corrección de
+ * proporción (features v1) al abrir la cámara.
+ */
+export function cameraAspect(video: HTMLVideoElement, detector: HandDetector): number | null {
+  if (!detector.needsCamera) return detector.aspect ?? null;
+  return video.videoWidth > 0 && video.videoHeight > 0 ? video.videoWidth / video.videoHeight : null;
 }
 
 declare global {
@@ -58,6 +73,7 @@ class MediaPipeDetector implements HandDetector {
             landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
             handedness: handednessCategory.categoryName === 'Left' ? 'Left' : 'Right',
             timestampMs: performance.now(),
+            aspect: video.videoWidth / video.videoHeight,
           });
         } else {
           onFrame(null);

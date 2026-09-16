@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { fetchBundledTemplates, loadTemplates, mergeTemplates } from '../cv/templates';
 import { usePracticeSession } from '../cv/usePracticeSession';
 import styles from './Practice.module.css';
+import { SCORE_LEVEL_LABEL, scoreLevel } from '@enlaza/cv-model';
 import type { SignTemplate } from '@enlaza/cv-model';
 
 const NO_TEMPLATES: SignTemplate[] = [];
@@ -131,7 +132,8 @@ export function Practice() {
           {session.status === 'correct' ? (
             <div className={`${styles.statusPill} ${styles.statusCorrect}`}>
               ¡Correcta! Seña {currentSign.gloss} validada
-              {session.finalScore !== null && ` · ${Math.round(session.finalScore * 100)}%`}
+              {session.finalScore !== null &&
+                ` · ${SCORE_LEVEL_LABEL[scoreLevel(session.finalScore, currentSign.signType)]}`}
             </div>
           ) : session.status === 'retry' ? (
             <div className={`${styles.statusPill} ${styles.statusRetry}`}>

@@ -25,9 +25,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector } from './common.mjs';
+import { chooseHand, frameVector, videoAspect } from './common.mjs';
 import { buildAlphabet } from './build-alphabet.mjs';
-import { buildDynamicTemplate } from '../../packages/cv-model/src/index.ts';
+import { buildDynamicTemplate, FEATURE_VERSION } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
 
 const OUT_FILE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
@@ -62,7 +62,7 @@ async function buildCourtesy(extractor, wanted) {
     const side = chooseHand(frames);
     if (!side) throw new Error(`Sin manos detectadas en ${video}`);
     const withHand = frames.filter((f) => f[`${side}Hand`]);
-    const vectors = withHand.map((f) => frameVector(f, side));
+    const vectors = withHand.map((f) => frameVector(f, side, videoAspect(result)));
     if (vectors.length < 8) throw new Error(`Muy pocos frames con mano en ${video}`);
     // Duración de la seña tal como se capturó: la ventana de práctica se
     // dimensiona con ella (ver defaultWindowMs en cv-model).
@@ -81,7 +81,10 @@ function mergeAndWrite(newTemplates, replace) {
   if (!replace && fs.existsSync(OUT_FILE)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(OUT_FILE, 'utf8'));
-      if (parsed.version === 1 && Array.isArray(parsed.templates)) existing = parsed.templates;
+      // Plantillas de otra versión de features no se mezclan: se regeneran.
+      if (parsed.version === FEATURE_VERSION && Array.isArray(parsed.templates)) {
+        existing = parsed.templates;
+      }
     } catch {
       /* archivo corrupto: se regenera */
     }
@@ -91,7 +94,7 @@ function mergeAndWrite(newTemplates, replace) {
     (a, b) => a.signId.localeCompare(b.signId),
   );
   const store = {
-    version: 1,
+    version: FEATURE_VERSION,
     source:
       'Derivadas de los videos de referencia de ICAL con tools/content/build-templates.mjs. ' +
       'Contenido provisional, sin validar por ICAL ni por la comunidad sorda (validated=0).' +

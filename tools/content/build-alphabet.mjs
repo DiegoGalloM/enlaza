@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector } from './common.mjs';
+import { chooseHand, frameVector, videoAspect } from './common.mjs';
 import {
   buildDynamicTemplate,
   buildStaticTemplate,
@@ -186,7 +186,7 @@ export async function buildAlphabet(extractor) {
     const letter = LETTERS[i];
     const segment = segments[i];
     const side = chooseHand(segment);
-    const vectors = segment.map((f) => frameVector(f, side)).filter(Boolean);
+    const vectors = segment.map((f) => frameVector(f, side, videoAspect(result))).filter(Boolean);
     if (vectors.length < STATIC_WINDOW) {
       throw new Error(`Letra ${letter} (${describe(segment)}): solo ${vectors.length} frames con mano.`);
     }

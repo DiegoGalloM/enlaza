@@ -2,9 +2,23 @@ import { LANDMARK_COUNT, MIDDLE_MCP, WRIST } from './types';
 import type { Handedness, Landmark } from './types';
 
 /**
+ * Versión de la definición de features. Plantillas de otra versión no son
+ * comparables y deben migrarse (ver migrateFeatureVector).
+ * - v1: coordenadas normalizadas tal cual (0–1 por ancho y por alto).
+ * - v2: x y z escaladas por la proporción de la imagen (ancho/alto).
+ */
+export const FEATURE_VERSION = 2;
+
+/**
  * Convert raw landmarks into a translation/scale/mirror-invariant feature
  * vector (63 dims = 21 × xyz):
  *
+ * - x and z are multiplied by the image aspect ratio (width / height):
+ *   MediaPipe normalizes x by the image width and y by its height (z uses
+ *   roughly the scale of x), so the same hand yields a differently squashed
+ *   shape on a 16:9 camera than on a 4:3 one. Scaling by the aspect puts all
+ *   three axes in the same unit (image heights) and makes features
+ *   independent of the camera's proportions;
  * - left hands are mirrored to a canonical right hand, so users can sign
  *   with either hand;
  * - the wrist is moved to the origin, so position in frame doesn't matter;
@@ -15,7 +29,11 @@ import type { Handedness, Landmark } from './types';
  * distinguished mainly by hand orientation, and collapsing rotation would
  * make them identical.
  */
-export function toFeatureVector(landmarks: Landmark[], handedness: Handedness): number[] {
+export function toFeatureVector(
+  landmarks: Landmark[],
+  handedness: Handedness,
+  aspect: number,
+): number[] {
   if (landmarks.length !== LANDMARK_COUNT) {
     throw new Error(`Expected ${LANDMARK_COUNT} landmarks, got ${landmarks.length}`);
   }
@@ -24,16 +42,38 @@ export function toFeatureVector(landmarks: Landmark[], handedness: Handedness): 
   const mirror = handedness === 'Left' ? -1 : 1;
 
   const scale =
-    Math.hypot(middle.x - wrist.x, middle.y - wrist.y, middle.z - wrist.z) || 1;
+    Math.hypot(
+      aspect * (middle.x - wrist.x),
+      middle.y - wrist.y,
+      aspect * (middle.z - wrist.z),
+    ) || 1;
 
   const vector: number[] = new Array(LANDMARK_COUNT * 3);
   for (let i = 0; i < LANDMARK_COUNT; i++) {
     const p = landmarks[i]!;
-    vector[i * 3] = (mirror * (p.x - wrist.x)) / scale;
+    vector[i * 3] = (mirror * aspect * (p.x - wrist.x)) / scale;
     vector[i * 3 + 1] = (p.y - wrist.y) / scale;
-    vector[i * 3 + 2] = (p.z - wrist.z) / scale;
+    vector[i * 3 + 2] = (aspect * (p.z - wrist.z)) / scale;
   }
   return vector;
+}
+
+/**
+ * Convierte un vector v1 (sin corrección de proporción) a v2, conociendo la
+ * proporción de la cámara con que se grabó.
+ *
+ * Es exacto para un vector de un frame: v1 guarda (p − muñeca) / escala, así
+ * que escalar x y z por la proporción y renormalizar por el nuevo largo
+ * muñeca→nudillo medio (que se lee del propio vector, landmark 9) da lo mismo
+ * que recalcular desde los landmarks. La escala original se cancela. Para
+ * promedios (estáticas) o secuencias remuestreadas (dinámicas) es una
+ * aproximación muy cercana, porque se promediaron antes de renormalizar.
+ */
+export function migrateFeatureVector(vector: number[], aspect: number): number[] {
+  const scaled = vector.map((value, i) => (i % 3 === 1 ? value : value * aspect));
+  const k = MIDDLE_MCP * 3;
+  const scale = Math.hypot(scaled[k]!, scaled[k + 1]!, scaled[k + 2]!) || 1;
+  return scaled.map((value) => value / scale);
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {

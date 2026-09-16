@@ -44,10 +44,21 @@ export function appHandedness(side) {
   return side === 'right' ? 'Right' : 'Left';
 }
 
-/** Vector de features de un frame extraído, con la etiqueta de mano de la app. */
-export function frameVector(frame, side) {
+/** Proporción (ancho/alto) del video del que salió una extracción. */
+export function videoAspect(result) {
+  if (!result.videoWidth || !result.videoHeight) {
+    throw new Error('La extracción no trae videoWidth/videoHeight: vuelve a extraer el video');
+  }
+  return result.videoWidth / result.videoHeight;
+}
+
+/**
+ * Vector de features de un frame extraído, con la etiqueta de mano de la app
+ * y la proporción del video fuente (features v2, ver toFeatureVector).
+ */
+export function frameVector(frame, side, aspect) {
   const lm = frame[`${side}Hand`];
   if (!lm) return null;
   const landmarks = lm.map(([x, y, z]) => ({ x, y, z }));
-  return toFeatureVector(landmarks, appHandedness(side));
+  return toFeatureVector(landmarks, appHandedness(side), aspect);
 }
