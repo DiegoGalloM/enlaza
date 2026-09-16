@@ -1,7 +1,13 @@
 import { toFeatureVector } from './normalize';
 import { STATIC_THRESHOLD, classifyStatic } from './staticClassifier';
 import { DYNAMIC_THRESHOLD, classifyDynamic } from './dynamicClassifier';
-import type { ClassifyResult, HandFrame, SignTemplate, SignType } from './types';
+import type {
+  ClassifyResult,
+  DynamicTemplate,
+  HandFrame,
+  SignTemplate,
+  SignType,
+} from './types';
 
 export type SessionStatus =
   | 'waiting' // no hand detected yet
@@ -26,6 +32,24 @@ export interface SessionOptions {
   checkIntervalMs?: number;
   staticThreshold?: number;
   dynamicThreshold?: number;
+}
+
+/** Ventana por defecto cuando la seña no trae duración de origen. */
+const FALLBACK_WINDOW_MS = 2000;
+
+/**
+ * La ventana de captura debe durar lo que dura la seña buscada: DTW compara la
+ * ventana completa contra la plantilla completa, así que una ventana más corta
+ * que la seña solo puede ver un pedazo (y nunca supera el umbral) y una mucho
+ * más larga mete reposo. Las plantillas derivadas de los videos de referencia
+ * traen esa duración; las grabadas en el dispositivo no, y usan el default.
+ */
+function defaultWindowMs(targetSignId: string, templates: SignTemplate[]): number {
+  const durations = templates
+    .filter((t): t is DynamicTemplate => t.signId === targetSignId && t.type === 'dynamic')
+    .map((t) => t.sourceMs)
+    .filter((ms): ms is number => ms !== undefined);
+  return durations.length > 0 ? Math.max(...durations) : FALLBACK_WINDOW_MS;
 }
 
 /**
@@ -59,7 +83,7 @@ export class SessionValidator {
     this.opts = {
       holdFrames: options.holdFrames ?? 8,
       retryFrames: options.retryFrames ?? 20,
-      windowMs: options.windowMs ?? 2000,
+      windowMs: options.windowMs ?? defaultWindowMs(targetSignId, templates),
       checkIntervalMs: options.checkIntervalMs ?? 400,
       staticThreshold: options.staticThreshold ?? STATIC_THRESHOLD,
       dynamicThreshold: options.dynamicThreshold ?? DYNAMIC_THRESHOLD,

@@ -82,6 +82,11 @@ describe('Practice', () => {
 
     renderPractice();
     await screen.findByText(/Muestra tu mano/);
+    // Las plantillas empaquetadas cargan async: esperar a que el detector
+    // arranque (el aviso de cámara desaparece) antes de emitir frames.
+    await waitFor(() =>
+      expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
+    );
 
     // Hold the target sign for the required frames (default holdFrames = 8).
     await act(async () => {
@@ -106,6 +111,9 @@ describe('Practice', () => {
 
     renderPractice();
     await screen.findByText(/Muestra tu mano/);
+    await waitFor(() =>
+      expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
+    );
 
     // Hold the WRONG sign (s2 = "B") past retryFrames (default 20).
     await act(async () => {

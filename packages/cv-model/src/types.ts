@@ -38,6 +38,15 @@ export interface DynamicTemplate {
   type: 'dynamic';
   /** Resampled sequence of feature vectors. */
   frames: number[][];
+  /**
+   * Duración real de la seña de la que salió la plantilla, en ms.
+   * La comparación DTW es de ventana completa contra plantilla completa, así
+   * que la ventana de captura tiene que durar lo que dura la seña: con una
+   * ventana más corta solo entra un pedazo, y con una mucho más larga entran
+   * frames de reposo que ensucian la comparación. Opcional: las plantillas
+   * grabadas en /plantillas no la traen y usan la ventana por defecto.
+   */
+  sourceMs?: number;
 }
 
 export type SignTemplate = StaticTemplate | DynamicTemplate;

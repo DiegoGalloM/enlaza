@@ -56,3 +56,31 @@ export function importTemplates(json: string): SignTemplate[] {
   saveTemplates(parsed.templates);
   return parsed.templates;
 }
+
+/**
+ * Plantillas empaquetadas con la app: derivadas de los videos de referencia
+ * de ICAL por tools/content/build-templates.mjs (contenido provisional, sin
+ * validar). No contienen datos del usuario — son de la señante de los videos
+ * fuente — así que sí pueden distribuirse con la app.
+ */
+const BUNDLED_URL = '/templates/lsc-bundled.json';
+
+export async function fetchBundledTemplates(): Promise<SignTemplate[]> {
+  try {
+    const res = await fetch(BUNDLED_URL);
+    if (!res.ok) return [];
+    const parsed = (await res.json()) as TemplateStore;
+    return parsed.version === 1 && Array.isArray(parsed.templates) ? parsed.templates : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Combina plantillas: las grabadas en este dispositivo pisan a las empaquetadas. */
+export function mergeTemplates(
+  bundled: SignTemplate[],
+  local: SignTemplate[],
+): SignTemplate[] {
+  const localIds = new Set(local.map((t) => t.signId));
+  return [...bundled.filter((t) => !localIds.has(t.signId)), ...local];
+}

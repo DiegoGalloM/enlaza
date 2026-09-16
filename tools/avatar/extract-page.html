@@ -1,0 +1,135 @@
+<!doctype html>
+<!--
+  Página que ejecuta MediaPipe Holistic Landmarker sobre un video servido
+  por extract-landmarks.mjs. No se usa directamente: la carga Playwright.
+  Parámetros de query: ?video=<ruta>&fps=<n>
+-->
+<meta charset="utf-8" />
+<video id="v" muted playsinline></video>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const videoUrl = params.get('video');
+  // 0.15×: la detección (~230 ms/frame en CPU) bloquea la presentación de
+  // frames; a esa velocidad el muestreo efectivo ronda 14-30 fps. Para videos
+  // largos donde basta ~4 fps (p. ej. el abecedario) se puede pasar rate=1.
+  const rate = Number(params.get('rate') ?? 0.15);
+  // sig=1: además de landmarks, una firma de luminancia 8×8 de la franja
+  // derecha del frame (donde el video del abecedario rotula la letra) para
+  // poder segmentar por cambio de rótulo.
+  const wantSig = params.get('sig') === '1';
+
+  const round = (n) => Math.round(n * 10000) / 10000;
+  // Los campos del resultado holistic pueden venir como Landmark[] o Landmark[][]
+  // según la versión; unwrap toma la primera detección en ambos casos.
+  const unwrap = (field) => {
+    if (!field || field.length === 0) return null;
+    const first = field[0];
+    return Array.isArray(first) ? (first.length ? first : null) : field;
+  };
+  const pack = (lms, withVis) =>
+    lms
+      ? lms.map((p) =>
+          withVis
+            ? [round(p.x), round(p.y), round(p.z), round(p.visibility ?? 0)]
+            : [round(p.x), round(p.y), round(p.z)],
+        )
+      : null;
+
+  async function main() {
+    const { FilesetResolver, HolisticLandmarker } = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/+esm'
+    );
+    const vision = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/wasm',
+    );
+    const landmarker = await HolisticLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task',
+      },
+      runningMode: 'VIDEO',
+    });
+
+    const video = document.getElementById('v');
+    video.src = videoUrl;
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve;
+      video.onerror = () => reject(new Error(`No se pudo decodificar ${videoUrl}`));
+    });
+    if (!video.videoWidth) throw new Error('Video sin dimensiones: ¿codec no soportado?');
+
+    let sigCtx = null;
+    if (wantSig) {
+      const sigCanvas = document.createElement('canvas');
+      sigCanvas.width = 8;
+      sigCanvas.height = 8;
+      sigCtx = sigCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    const captionSignature = () => {
+      sigCtx.drawImage(
+        video,
+        video.videoWidth * 0.72, 0, video.videoWidth * 0.28, video.videoHeight,
+        0, 0, 8, 8,
+      );
+      const d = sigCtx.getImageData(0, 0, 8, 8).data;
+      return Array.from({ length: 64 }, (_, i) =>
+        Math.round((d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3),
+      );
+    };
+
+    // Los mp4 de referencia no soportan seek preciso (un solo keyframe: el
+    // frame decodificado no cambia al mover currentTime), así que se muestrea
+    // durante reproducción real con requestVideoFrameCallback. playbackRate
+    // reducido para que la detección alcance a correr en (casi) cada frame.
+    const frames = [];
+    let lastTs = 0;
+    video.playbackRate = rate;
+    await video.play();
+    await new Promise((resolve, reject) => {
+      const onFrame = (_now, meta) => {
+        try {
+          const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
+          lastTs = ts;
+          const r = landmarker.detectForVideo(video, ts);
+          const frame = {
+            t: round(meta.mediaTime),
+            poseWorld: pack(unwrap(r.poseWorldLandmarks), true),
+            leftHand: pack(unwrap(r.leftHandLandmarks)),
+            rightHand: pack(unwrap(r.rightHandLandmarks)),
+            leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
+            rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
+          };
+          if (sigCtx) frame.sig = captionSignature();
+          frames.push(frame);
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        if (video.ended) resolve();
+        else video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+      video.onended = () => setTimeout(resolve, 100);
+    });
+    landmarker.close();
+
+    window.__result = {
+      source: videoUrl.replace(/^\//, ''),
+      landmarker: 'mediapipe holistic_landmarker float16/latest (tasks-vision 1.0.0)',
+      // fps efectivo del muestreo por rVFC (el parámetro fps es solo nominal)
+      fps: round(frames.length / video.duration),
+      videoWidth: video.videoWidth,
+      videoHeight: video.videoHeight,
+      duration: round(video.duration),
+      poseFormat: '[x, y, z, visibility] world (metros, origen en caderas)',
+      handFormat: '[x, y, z] — *Hand: imagen normalizada; *HandWorld: metros, origen en la mano',
+      frames,
+    };
+    window.__done = true;
+  }
+
+  main().catch((err) => {
+    window.__error = String(err?.stack ?? err);
+    window.__done = true;
+  });
+</script>

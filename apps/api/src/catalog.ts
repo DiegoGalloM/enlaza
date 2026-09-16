@@ -11,6 +11,7 @@ import type { DatabaseSync } from 'node:sqlite';
 interface SignSeed {
   gloss: string;
   type: 'static' | 'dynamic';
+  description?: string;
 }
 
 interface LessonSeed {
@@ -27,6 +28,43 @@ const words = (glosses: string[]): SignSeed[] =>
   glosses.map((gloss) => ({ gloss, type: 'dynamic' }));
 
 export const LSC_LESSONS: LessonSeed[] = [
+  // Orden pedagógico dado por Victoria Olmos (ICAL/FENASCOL, reunión sept 2026):
+  // primero el "bautizo" (nombre-seña de la persona oyente), luego las normas
+  // de cortesía, y después el abecedario (content/ical-2026-09/content-brief.md).
+  {
+    slug: 'bautizo',
+    title: 'Bautizo',
+    subtitle: 'Tu nombre-seña',
+    signs: [
+      {
+        gloss: 'Mi nombre-seña',
+        type: 'dynamic',
+        description:
+          'En la comunidad sorda cada persona recibe un nombre-seña; el "bautizo" es ' +
+          'recibirlo. Idealmente te lo asigna una persona sorda. Graba el tuyo como ' +
+          'plantilla personal en la página de calibración y practícalo aquí. ' +
+          '(El nombre-seña del avatar de Enlaza está pendiente de definir con ICAL.)',
+      },
+    ],
+  },
+  {
+    // Las 10 señas con video de referencia de ICAL, en el orden del brief.
+    slug: 'cortesia',
+    title: 'Normas de cortesía',
+    subtitle: '10 señas',
+    signs: words([
+      'Buenos días',
+      'Buenas tardes',
+      'Buenas noches',
+      'Gracias',
+      'Por favor',
+      'Hola',
+      'Con mucho gusto',
+      'Lo siento',
+      '¿Cómo está?',
+      'Permiso',
+    ]),
+  },
   {
     slug: 'alfabeto-1',
     title: 'Alfabeto I',
@@ -44,21 +82,6 @@ export const LSC_LESSONS: LessonSeed[] = [
       ['N', 'Ñ', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'],
       new Set(['Ñ', 'X', 'Z']),
     ),
-  },
-  {
-    slug: 'saludos',
-    title: 'Saludos',
-    subtitle: '8 señas',
-    signs: words([
-      'Hola',
-      'Buenos días',
-      'Buenas tardes',
-      'Buenas noches',
-      'Gracias',
-      'Mucho gusto',
-      'Mi nombre es',
-      'Adiós',
-    ]),
   },
   {
     slug: 'numeros',
@@ -114,7 +137,8 @@ export function seedCatalog(db: DatabaseSync): void {
         `${lessonId}-${si}`,
         lessonId,
         sign.gloss,
-        `Seña de "${sign.gloss}" en LSC. Descripción pendiente de validación con ICAL.`,
+        sign.description ??
+          `Seña de "${sign.gloss}" en LSC. Descripción pendiente de validación con ICAL.`,
         sign.type,
         si,
       );

@@ -66,12 +66,13 @@ describe('GET /api/me/progress', () => {
 
     expect(body.displayName).toBe('Pro');
     expect(body.totalMastered).toBe(3);
-    expect(body.totalSigns).toBe(73);
+    expect(body.totalSigns).toBe(76);
     expect(body.streakDays).toBe(1); // practiced today only
     expect(body.weekActivity).toHaveLength(7);
     expect(body.weekActivity.some((d) => d.active)).toBe(true);
-    expect(body.lessons).toHaveLength(7);
-    expect(body.lessons[0]!.percent).toBe(Math.round((3 / 13) * 100));
+    expect(body.lessons).toHaveLength(8);
+    // Las 3 señas dominadas pertenecen a alfabeto-1 (tercera lección del orden ICAL).
+    expect(body.lessons[2]!.percent).toBe(Math.round((3 / 13) * 100));
     expect(body.achievements.map((a) => a.id)).toEqual([
       'alfabeto-completo',
       'primera-semana',

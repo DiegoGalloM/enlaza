@@ -3,16 +3,39 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
-import { loadTemplates } from '../cv/templates';
+import { fetchBundledTemplates, loadTemplates, mergeTemplates } from '../cv/templates';
 import { usePracticeSession } from '../cv/usePracticeSession';
 import styles from './Practice.module.css';
+import type { SignTemplate } from '@enlaza/cv-model';
+
+const NO_TEMPLATES: SignTemplate[] = [];
+
+/**
+ * Plantillas disponibles para practicar: las empaquetadas con la app
+ * (derivadas de los videos de ICAL) más las grabadas en este dispositivo,
+ * que tienen prioridad. `null` mientras cargan, para no arrancar la sesión
+ * de práctica con una lista incompleta y reiniciar la cámara después.
+ */
+function useAllTemplates(): SignTemplate[] | null {
+  const [templates, setTemplates] = useState<SignTemplate[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchBundledTemplates().then((bundled) => {
+      if (!cancelled) setTemplates(mergeTemplates(bundled, loadTemplates()));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return templates;
+}
 
 export function Practice() {
   const navigate = useNavigate();
   const { lessonId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const { data, reload } = useApi(() => api.lesson(lessonId), [lessonId]);
-  const templates = useMemo(() => loadTemplates(), []);
+  const templates = useAllTemplates();
   const [attemptSaved, setAttemptSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -21,8 +44,8 @@ export function Practice() {
   const currentSign = signs.find((s) => s.id === requestedSignId) ?? signs[0] ?? null;
 
   const session = usePracticeSession(
-    currentSign ? { id: currentSign.id, type: currentSign.signType } : null,
-    templates,
+    currentSign && templates ? { id: currentSign.id, type: currentSign.signType } : null,
+    templates ?? NO_TEMPLATES,
   );
 
   const glossById = useMemo(() => new Map(signs.map((s) => [s.id, s.gloss])), [signs]);

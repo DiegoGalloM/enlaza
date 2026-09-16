@@ -106,6 +106,14 @@
   gap: 12px;
 }
 
+/* Mismo encuadre que .videoFrame: el avatar ocupa el lugar del video. */
+.avatarFrame {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  height: 320px;
+}
+
 .playButton {
   width: 66px;
   height: 66px;

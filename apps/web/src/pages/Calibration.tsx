@@ -12,6 +12,7 @@ import { api } from '../api/client';
 import { createDetector } from '../cv/detector';
 import {
   exportTemplates,
+  fetchBundledTemplates,
   importTemplates,
   loadTemplates,
   removeTemplate,
@@ -37,6 +38,7 @@ export function Calibration() {
   );
 
   const [templates, setTemplates] = useState<SignTemplate[]>(() => loadTemplates());
+  const [bundledIds, setBundledIds] = useState<Set<string>>(new Set());
   const [selectedSignId, setSelectedSignId] = useState<string | null>(null);
   const [samples, setSamples] = useState<number[][]>([]);
   const [recording, setRecording] = useState(false);
@@ -55,6 +57,16 @@ export function Calibration() {
     () => new Map(templates.map((t) => [t.signId, t])),
     [templates],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchBundledTemplates().then((bundled) => {
+      if (!cancelled) setBundledIds(new Set(bundled.map((t) => t.signId)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const detector = createDetector();
@@ -250,10 +262,13 @@ export function Calibration() {
                     className={styles.signButton}
                     onClick={() => selectSign(sign.id)}
                   >
-                    <span className={has ? styles.dotDone : styles.dotPending} />
+                    <span
+                      className={has || bundledIds.has(sign.id) ? styles.dotDone : styles.dotPending}
+                    />
                     <span>{sign.gloss}</span>
                     <span className={styles.signType}>
                       {sign.signType === 'static' ? 'est.' : 'din.'}
+                      {!has && bundledIds.has(sign.id) ? ' · incluida' : ''}
                     </span>
                   </button>
                   {has && (

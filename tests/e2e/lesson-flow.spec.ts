@@ -57,12 +57,24 @@ test('registro → lección → práctica validada por CV → progreso', async (
   await page.getByLabel('Contraseña').fill('secreta-e2e-123');
   await page.getByRole('button', { name: 'Crear cuenta' }).click();
 
-  // Ruta de aprendizaje: saludo + primera lección desbloqueada.
+  // Ruta de aprendizaje: la primera lección del orden ICAL es el bautizo.
   await expect(page.getByText('Hola de nuevo, Prueba')).toBeVisible();
-  await expect(page.getByRole('link', { name: /Alfabeto I\b/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Continuar: Alfabeto I' }).click();
+  await expect(page.getByRole('link', { name: /Bautizo/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Continuar: Bautizo' }).click();
 
-  // Lección: seña A, con aviso de contenido provisional.
+  // Bautizo: el nombre-seña es personal (sin plantilla incluida), así que la
+  // práctica ofrece el camino sin validación.
+  await expect(page.getByRole('heading', { name: 'Mi nombre-seña' })).toBeVisible();
+  await page.getByRole('button', { name: 'Practicar con cámara' }).click();
+  await page.getByRole('button', { name: /Marcar practicada/ }).click();
+  await expect(page.getByRole('button', { name: 'Volver a la lección' })).toBeVisible();
+
+  // Completar el bautizo desbloquea la lección de cortesía (orden ICAL).
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Continuar: Normas de cortesía' })).toBeVisible();
+
+  // Lección de abecedario: seña A, con aviso de contenido provisional.
+  await page.goto('/leccion/lsc-alfabeto-1');
   await expect(page.getByRole('heading', { name: 'A', exact: true })).toBeVisible();
   await expect(page.getByText(/Contenido provisional/)).toBeVisible();
   await page.getByRole('button', { name: 'Practicar con cámara' }).click();
@@ -71,8 +83,8 @@ test('registro → lección → práctica validada por CV → progreso', async (
   await expect(page.getByText(/¡Correcta! Seña A validada/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: /Siguiente seña: B/ })).toBeVisible();
 
-  // Progreso: la seña dominada aparece en el resumen.
+  // Progreso: bautizo + letra A dominadas aparecen en el resumen.
   await page.goto('/progreso');
-  await expect(page.getByRole('heading', { name: /1 señas de LSC/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /2 señas de LSC/ })).toBeVisible();
   await expect(page.getByText('Dominio por lección')).toBeVisible();
 });
