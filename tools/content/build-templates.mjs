@@ -28,6 +28,7 @@ import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { chooseHand, frameVector } from './common.mjs';
 import { buildAlphabet } from './build-alphabet.mjs';
 import { buildDynamicTemplate } from '../../packages/cv-model/src/index.ts';
+import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
 
 const OUT_FILE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
 
@@ -52,9 +53,15 @@ async function buildCourtesy(extractor, wanted) {
   const templates = [];
   for (const { video, signId } of COURTESY.filter((c) => !wanted || wanted.has(c.signId))) {
     const result = await extractor.extract(video);
-    const side = chooseHand(result.frames);
+    // Tramo de la seña: el mismo que reproduce el avatar (animations.ts). Los
+    // videos traen preparación y regreso a reposo; si entran a la plantilla,
+    // DTW exige que la persona también los haga, y quien copia al avatar no
+    // los hace (Hola completo: 0.42 haciendo solo la seña).
+    const [from, to] = signAnimationFor(signId)?.window ?? [-Infinity, Infinity];
+    const frames = result.frames.filter((f) => f.t >= from && f.t <= to);
+    const side = chooseHand(frames);
     if (!side) throw new Error(`Sin manos detectadas en ${video}`);
-    const withHand = result.frames.filter((f) => f[`${side}Hand`]);
+    const withHand = frames.filter((f) => f[`${side}Hand`]);
     const vectors = withHand.map((f) => frameVector(f, side));
     if (vectors.length < 8) throw new Error(`Muy pocos frames con mano en ${video}`);
     // Duración de la seña tal como se capturó: la ventana de práctica se

@@ -51,16 +51,32 @@ describe('smoothResample', () => {
 });
 
 describe('cleanAnimation', () => {
-  it('cierra el bucle: el último frame es la pose del primero', () => {
+  it('cierra el bucle sin brincos ni frenones: la velocidad es continua al repetir', () => {
     const t = times(40);
     const raw = new Map([['rightUpperArm', t.map((x) => aroundZ(Math.sin(x * 6)))]]);
     const clip = cleanAnimation(t, raw, () => new THREE.Quaternion(), DEFAULT_CLEANUP);
     const track = clip.tracks.get('rightUpperArm')!;
     expect(track).toHaveLength(clip.frameCount);
-    expect(track[clip.frameCount - 1].angleTo(track[0])).toBeLessThan(1e-6);
-    for (let i = 1; i < clip.frameCount; i++) {
-      expect(track[i].angleTo(track[i - 1])).toBeLessThan(0.3); // sin brincos
+    // Pasos entre frames consecutivos, incluido el salto del último al primero.
+    const steps = track.map((q, i) => q.angleTo(track[(i + 1) % track.length]));
+    for (let i = 0; i < steps.length; i++) {
+      expect(steps[i]).toBeLessThan(0.15); // sin brincos
+      // sin cambios bruscos de velocidad (un slerp directo al inicio frena en seco)
+      expect(Math.abs(steps[i] - steps[(i + 1) % steps.length])).toBeLessThan(0.02);
     }
+  });
+
+  it('aplica el tramo de la seña después de suavizar: los bordes no se deforman', () => {
+    const t = times(90); // 3 s, rampa lineal: ángulo = tiempo
+    const raw = new Map([['rightUpperArm', t.map((x) => aroundZ(x))]]);
+    const clip = cleanAnimation(t, raw, () => new THREE.Quaternion(), {
+      ...DEFAULT_CLEANUP,
+      window: [1, 2],
+    });
+    const track = clip.tracks.get('rightUpperArm')!;
+    expect(angleOf(track[0])).toBeCloseTo(1, 2);
+    const clipFrames = Math.round(clip.fps) + 1; // 1 s de seña
+    expect(angleOf(track[clipFrames - 1])).toBeCloseTo(2, 2);
   });
 
   it('recorta la quietud del final dejando un margen', () => {

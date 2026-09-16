@@ -48,7 +48,7 @@ Registra cómo se revisó `docs/propuesta-avatar-lengua-senas.pdf` contra el có
 **Por qué:** la mano izquierda de Hola cuelga fuera de cuadro; una mano relajada es lo que realmente hace la señante. La rampa evita el brinco al aparecer. 0.3 s cubre parpadeos de tracking sin inventar movimiento en pérdidas reales.
 **Descartado:** mantener el relleno "último valor conocido" (causa directa del brinco).
 
-### A6. Suavizado gaussiano centrado + remuestreo a 30 fps, en una sola pasada
+### A6. Suavizado gaussiano centrado + remuestreo a 30 fps, en una sola pasada *(salida a 60 fps desde A18)*
 **Qué:** para cada instante de salida (cada 1/30 s) se promedian las muestras cercanas con peso gaussiano sobre su tiempo real. σ = 35 ms para brazos, muñeca y cabeza; 50 ms para dedos (más ruidosos). Promedio de cuaterniones: suma ponderada normalizada con alineación de hemisferio.
 **Por qué:**
 - Tenemos el clip completo, así que el filtro puede ser **no causal** (mira hacia adelante y hacia atrás): quita jitter sin introducir retraso.
@@ -62,7 +62,7 @@ Registra cómo se revisó `docs/propuesta-avatar-lengua-senas.pdf` contra el có
 **Qué:** se suma la velocidad angular de todos los huesos; los frames bajo el 10 % del pico al inicio y al final se recortan, dejando 0.12 s de margen.
 **Por qué:** umbral relativo y no absoluto para no depender de la escala del ruido de cada video. En Hola casi no recorta (la seña empieza de inmediato y la quietud final coincide con la mano izquierda entrando en cuadro), pero queda listo para videos con silencios largos, como pide el PDF.
 
-### A8. Cierre del bucle: transición de 0.45 s al primer frame y pausa de 0.2 s
+### A8. Cierre del bucle: transición de 0.45 s al primer frame y pausa de 0.2 s *(reemplazada por A18)*
 **Qué:** al clip se le agregan frames que van de la última pose a la primera con `smoothstep`, y luego se mantiene la pose inicial 0.2 s. El reproductor envuelve de forma continua. Ciclo de Hola ≈ 3.4 s.
 **Por qué:** elimina el golpe al repetir, y la breve pausa marca visualmente dónde empieza cada repetición. En Hola el inicio y el final ya son poses neutras, así que la transición es corta y natural.
 **Descartado:** crossfade a una pose neutra genérica. Alarga el ciclo y agrega un movimiento que no está en el video.
@@ -91,10 +91,85 @@ Registra cómo se revisó `docs/propuesta-avatar-lengua-senas.pdf` contra el có
 - `apps/web/test/avatar-cleanup.test.ts` (6 pruebas): interpolación por tiempo, rampa monótona a reposo, reducción de jitter, espaciado irregular, cierre de bucle sin brincos y recorte de quietud. Suite web: 14/14. `tsc -b` y `vite build` sin errores.
 - Comparación visual con `tools/avatar/capture-frames.mjs` (nuevo): panel forzado a 320 px de alto y `deviceScaleFactor` 1, que es el peor caso de nitidez. La imagen de arriba se generó así.
 
-## Pendiente (paso 3 del PDF: retargeting)
+La lista de pendientes de esta primera iteración (giro del brazo, proporciones con IK, dedos) se resolvió en la segunda iteración, abajo.
 
-Lo que sigue viéndose encimado en las capturas (las manos juntas atraviesan el vientre) no se resuelve limpiando, sino con:
-1. **Giro del brazo:** construir la rotación de brazo y antebrazo con el plano hombro–codo–muñeca, en vez de `setFromUnitVectors`, y repartir el giro entre antebrazo y muñeca (hoy lo absorbe la muñeca).
-2. **Proporciones:** posicionar la muñeca escalando por el ancho de hombros (normalización del PDF) y resolver con IK de dos huesos, con un límite para que la mano no entre al torso.
-3. **Dedos:** abducción y eje real del pulgar.
-4. **Validación:** video y avatar lado a lado en `/avatar-poc` para revisión con ICAL (PDF §6).
+---
+
+# Segunda iteración: retargeting (paso 3), pelo y seña breve
+
+**Fecha:** 2026-09-16, después del merge de la primera iteración. Qué se pidió: que se vea "súper smooth" antes de seguir con otras señas. Los problemas señalados fueron tres: los dedos se mueven raro, las manos se traban al juntarse al final y el pelo atraviesa el cuerpo. Además, la animación debe ser breve, solo la seña.
+
+![Video de referencia (arriba) y avatar (abajo) en los mismos instantes](img/avatar-hola-video-vs-avatar.png)
+
+## Retargeting (`retarget.ts`, `rig.ts`)
+
+### A12. Medir el modelo en vez de suponer un rig ideal
+**Qué:** `measureRig` lee, al cargar el modelo, la posición de cada articulación en reposo y la dirección real de cada hueso hacia su hijo. Para las falanges distales usa los nodos `_end` del VRM. Ese rig medido es la referencia de todas las rotaciones.
+**Por qué:** el retargeting anterior suponía brazos exactamente en ±X y dedos rectos. En VRoid el pulgar sale en diagonal y los dedos van ligeramente abiertos. Calcular "de la dirección supuesta a la observada" metía esa diferencia como una rotación falsa en cada frame.
+
+### A13. Brazos por posición de la muñeca + IK de dos huesos, no por direcciones
+**Qué:** se toma la muñeca de la persona relativa a su hombro, se escala por el largo de brazo (avatar ÷ persona, mediana del clip) y se coloca relativa al hombro del avatar. El codo se resuelve con IK de dos huesos, usando el codo de la persona como polo.
+**Por qué:** copiar solo direcciones respeta los ángulos pero no dónde termina la mano. El avatar tiene otras proporciones (cabeza grande, torso corto), así que la mano acababa dentro de la cara o del vientre. Se escala por largo de brazo, y no por ancho de hombros como sugiere el PDF, porque lo que hay que preservar es el alcance: una mano extendida debe seguir extendida, sin importar cuán anchos sean los hombros de cada quien.
+**Costo asumido:** la mediana del largo de brazo depende de que la pose detecte bien hombro, codo y muñeca en la mayoría de los frames. En Hola la visibilidad del brazo derecho es ≥ 0.9.
+
+### A14. Colisión mano–cuerpo contra la silueta medida
+**Qué:** `measureBody` recorre los vértices de piel y ropa (con skinning aplicado) y guarda, por franjas de 2 cm de altura, el centro, el ancho y el fondo del torso y la cabeza como elipses. Antes del IK se prueban tres puntos de la mano (muñeca, nudillos y mitad de los dedos). Si alguno queda dentro, el objetivo de la muñeca se adelanta en +Z con 2.5 cm de holgura.
+**Por qué:** es suficiente para que la mano no atraviese el pecho ni la frente (en Hola la mano toca la frente) sin integrar un motor de física. Se mide sobre la ropa y no sobre los colliders del modelo porque la camisa es holgada.
+**Detalle:** los brazos en T-pose se excluyen por el hueso dominante de cada vértice (brazo o mano) y además con un tope lateral (hombro + 7 cm). Primero se intentó solo con el tope en la x del hombro y el torso salió de ±10 cm, cuando la camisa mide ±17 cm: la articulación del hombro queda por dentro de la camisa.
+
+### A15. Giro del brazo por el plano del codo; pronación repartida 50/50
+**Qué:** el brazo se orienta con la base (dirección del brazo, dirección en que dobla el antebrazo), así que su giro sobre el propio eje sale del plano hombro–codo–muñeca. Con el brazo casi recto ese plano no existe y se mezcla suavemente con el giro mínimo. La pronación/supinación que pide la mano se reparte: la mitad la gira el antebrazo y la otra mitad la muñeca.
+**Por qué:** antes todo el giro lo absorbía la muñeca y la malla se torcía como envoltura de caramelo. Sin huesos de giro en el antebrazo (VRM no los tiene), repartir 50/50 es el compromiso estándar.
+
+### A16. Dedos con límites anatómicos; pulgar por dirección observada
+**Qué:** cada falange se expresa en el marco de su hueso padre y se descompone en flexión (hacia la palma) y abducción (lateral). Se limita cada una: base −0.25…1.6 rad y ±0.3 de abducción; media 0…1.9; distal 0…1.4; sin abducción fuera de la base. El pulgar sigue la dirección observada de cada falange con un tope de 1.1 rad.
+**Por qué:** antes se usaba solo el ángulo entre segmentos, alrededor de un eje fijo, sin abducción y con el pulgar en un eje supuesto. El ruido de profundidad de MediaPipe se convertía en dedos doblados hacia atrás o cruzados; los límites cortan exactamente esos casos. El pulgar no se restringe a una bisagra porque su eje de flexión es oblicuo y distinto entre personas.
+**Verificado:** en el recorte de la mano a 1.3 s coincide con el video (tres dedos arriba, meñique doblado contra el pulgar).
+
+### A17. Solo la seña: tramo explícito por seña (Hola: 0.15–1.8 s)
+**Qué:** `animations.ts` registra por seña el tramo del video que es la seña. El suavizado se calcula con todo el video y el corte se aplica después. El brazo cuya mano nunca aparece en el tramo (aquí el izquierdo, en el regazo) va en reposo todo el clip.
+**Por qué:**
+- **Tramo elegido a mano:** viendo el video cuadro por cuadro, de 1.9 a 2.8 s la señante solo baja las manos y las entrelaza. Eso era el "se traban al juntarse" y no es parte de la seña. Qué es la seña es una decisión lingüística, no un umbral de movimiento, así que se registra explícito y se revisa con ICAL.
+- **Cortar después de suavizar:** si se corta antes, el filtro ve un solo lado en el borde y deforma el arranque. Medido: el tirón máximo del brazo estaba en 0.07 s.
+- **Por qué 0.15 s:** el video empieza con la mano ya en movimiento y antes de 0.05 s no hay datos.
+- **Brazo en reposo:** una mano fuera de cuadro hace que la pose estime el brazo a ciegas; quedaba flotando frente al vientre.
+**Ciclo resultante:** 2.05 s, frente a 3.4 s antes.
+**El mismo tramo define la plantilla de reconocimiento** (D29 en DECISIONES-TECNICAS.md): una sola fuente de verdad de qué es la seña.
+
+### A18. Cierre del bucle que conserva la velocidad, y salida a 60 fps
+**Qué:** la transición de regreso (0.4 s, sin pausa) mezcla con `smoothstep` dos cosas: la continuación del final de la seña, con su velocidad apagándose en ~0.1 s, y la anticipación del inicio, que llega con la velocidad con que arranca la seña. La animación limpia se muestrea a 60 fps en vez de 30.
+**Por qué:** un slerp directo entre la última y la primera pose arranca y termina con velocidad cero. Junto con la pausa, eso se sentía como un frenón en cada repetición. Con muestras a 30 fps, además, la velocidad cambiaba de golpe en cada muestra.
+**Medido** con `tools/avatar/measure-smoothness.mjs` (nuevo), aceleración angular máxima en rad/s², comparando la primera versión de este retargeting (cierre anterior, 30 fps, corte antes de suavizar) con la final:
+
+| Hueso | Antes | Después |
+|---|---|---|
+| Brazo | 553 | 149 |
+| Meñique (base) | 460 | 136 |
+| Índice (base) | 294 | 124 |
+| Cabeza | 212 | 48 |
+
+La prueba unitaria de continuidad del bucle falla si se vuelve al slerp directo (verificado).
+
+## Pelo (`rig.ts: addHairColliders`)
+
+![Pelo antes (izquierda) y después (derecha)](img/avatar-pelo-antes-despues.png)
+
+### A19. Colliders de pelo que siguen la silueta de la ropa
+**Qué:** con el mismo perfil de A14 se colocan esferas de 3 cm apoyadas por dentro de la superficie, al frente y atrás del torso, cada ~4 cm, y se agregan a las articulaciones del pelo. Las cápsulas de brazo del modelo se engrosan 1.8× solo para el pelo, porque las mangas son holgadas.
+**Por qué:** los colliders del modelo cubren columna, pecho alto, cuello, cabeza y brazos, pero no hombros ni el frente del pecho con la camisa. Por ahí el pelo largo se metía en la tela (se veían cortes dentados en los hombros).
+**Descartado:** cápsulas horizontales con el radio del fondo del torso. Sobresalen por arriba del hombro y dejan el pelo flotando.
+**Límite conocido:** la física de three-vrm solo corrige la punta de cada segmento de pelo, así que puede quedar algún cruce leve a mitad de segmento. En las capturas no se ve.
+
+## Verificación de la segunda iteración
+
+- **Pruebas nuevas:**
+  - `avatar-retarget.test.ts`: IK (alcance y largo de segmentos, polo, objetivo fuera de alcance) y colisión (empuje, puntos afuera, sección elíptica).
+  - `avatar-cleanup.test.ts`, dos más: bucle con velocidad continua y tramo aplicado después de suavizar.
+  - Suite web: 21/21. `tsc -b`, `oxlint` y `vite build` sin errores nuevos.
+- **Revisión cuadro por cuadro:** `/avatar-poc?t=1.2` congela la seña, y `capture-frames.mjs --tiempos=...` lo usa.
+
+## Pendiente
+
+1. **Validación con ICAL** del tramo elegido (A17) y de la configuración manual. La imagen de arriba sirve para esa revisión.
+2. **Expresión facial:** no se transfiere (PDF, fase posterior).
+3. **Mano con mano:** no hay colisión entre las dos manos. Hola no la necesita; señas donde las manos se tocan sí.

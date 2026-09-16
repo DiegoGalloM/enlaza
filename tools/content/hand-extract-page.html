@@ -1,0 +1,83 @@
+<!doctype html>
+<!--
+  Corre el MISMO HandLandmarker que la pantalla de práctica (apps/web/src/cv/
+  detector.ts: hand_landmarker float16/1, VIDEO, numHands 1) sobre un video del
+  repo, para simular lo que vería la cámara. La carga diagnose-practice.mjs.
+  Parámetros: ?video=<ruta>&aspect=<ancho/alto de la "cámara", p. ej. 1.3333>
+-->
+<meta charset="utf-8" />
+<video id="v" muted playsinline></video>
+<canvas id="c"></canvas>
+<script type="module">
+  const params = new URLSearchParams(location.search);
+  const aspect = Number(params.get('aspect') ?? 0);
+
+  async function main() {
+    const { FilesetResolver, HandLandmarker } = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/+esm'
+    );
+    const vision = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/wasm',
+    );
+    const landmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      },
+      runningMode: 'VIDEO',
+      numHands: 1,
+    });
+
+    const video = document.getElementById('v');
+    video.src = params.get('video');
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve;
+      video.onerror = () => reject(new Error('No se pudo decodificar el video'));
+    });
+
+    // Recorte central a la proporción de la "cámara" (p. ej. webcam 4:3).
+    const canvas = document.getElementById('c');
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const cropW = aspect ? Math.min(vw, Math.round(vh * aspect)) : vw;
+    canvas.width = cropW;
+    canvas.height = vh;
+    const ctx = canvas.getContext('2d');
+
+    const frames = [];
+    let lastTs = 0;
+    video.playbackRate = 0.0625;
+    await video.play();
+    await new Promise((resolve, reject) => {
+      const onFrame = (_now, meta) => {
+        try {
+          ctx.drawImage(video, (vw - cropW) / 2, 0, cropW, vh, 0, 0, cropW, vh);
+          const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
+          lastTs = ts;
+          const r = landmarker.detectForVideo(canvas, ts);
+          const lm = r.landmarks[0];
+          const hand = r.handedness[0]?.[0];
+          frames.push({
+            t: meta.mediaTime,
+            landmarks: lm ? lm.map((p) => ({ x: p.x, y: p.y, z: p.z })) : null,
+            handedness: hand ? (hand.categoryName === 'Left' ? 'Left' : 'Right') : null,
+          });
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        if (video.ended) resolve();
+        else video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+      video.onended = () => setTimeout(resolve, 100);
+    });
+    landmarker.close();
+    window.__result = { frames, cropW, height: vh };
+    window.__done = true;
+  }
+  main().catch((err) => {
+    window.__error = String(err?.stack ?? err);
+    window.__done = true;
+  });
+</script>

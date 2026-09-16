@@ -148,6 +148,38 @@
 
 ---
 
+## Avatar 3D
+
+Las decisiones del avatar (extracción, limpieza de la animación, retargeting, pelo, render) están en [AVATAR-DECISIONES.md](AVATAR-DECISIONES.md), numeradas A1, A2…
+
+---
+
+## Reconocimiento con plantillas de los videos de ICAL (sept 2026)
+
+### D29. La etiqueta de mano de las plantillas se MIDE contra el detector de la app
+**Qué:** `tools/content/common.mjs` etiqueta como `'Right'` la mano que Holistic reporta como `rightHand` (`appHandedness`), y la plantilla de Hola se regeneró.
+**Por qué:** la plantilla se había construido suponiendo, por la documentación de MediaPipe, que HandLandmarker etiqueta al revés en video sin espejar. Al medirlo con el mismo modelo y versión que usa la app (`diagnose-practice.mjs`), la mano derecha de la señante llega como `'Right'` en 72/72 frames. Como `toFeatureVector` espeja las manos `'Left'`, la plantilla quedó espejada respecto a lo que ve la cámara, y **Hola nunca podía validarse: 0.25 contra su propio video, con umbral de 0.60**. Así se explica lo observado en la práctica: la app detectaba la mano y dibujaba los nodos, pero nunca reconocía la seña.
+**Descartado:** confiar en la documentación sin medir. Queda escrito en el código de dónde sale la convención.
+
+### D30. La plantilla usa el mismo tramo de seña que el avatar
+**Qué:** `build-templates.mjs` recorta cada video con el `window` registrado en `apps/web/src/avatar/animations.ts` (Hola: 0.15–1.8 s) antes de construir la plantilla.
+**Por qué:** DTW compara la ventana de captura completa contra la plantilla completa. La plantilla de Hola incluía el regreso a reposo con las manos entrelazadas (hasta 2.8 s), algo que nadie hace al copiar la seña. Aun con la etiqueta corregida, hacer solo la seña daba 0.42 y no validaba. Con el tramo: 0.69. Un solo registro de "qué es la seña" evita que el avatar enseñe una cosa y el validador espere otra.
+
+### D31. Diagnóstico con el detector real de la app, no solo con los landmarks de la plantilla
+**Qué:** `tools/content/diagnose-practice.mjs` pasa el video por el mismo HandLandmarker de la práctica (`hand-extract-page.html`) y lo repite por `SessionValidator` en escenarios de uso: solo la seña, más lento o más rápido, repeticiones seguidas y cámara 4:3.
+**Por qué:** `verify-template.mjs` reutilizaba los landmarks de Holistic con la misma convención de etiqueta con que se construyó la plantilla, así que el error de D29 no podía aparecer ahí (daba "Todo en orden").
+**Resultado tras D29 y D30** (misma señante del video):
+
+| Cámara | Puntaje | ¿Valida? |
+|---|---|---|
+| 16:9 | 0.66–0.69 | sí, en todos los escenarios |
+| 4:3 | 0.60–0.62 | sí, pero al filo del umbral |
+
+Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Buenos días).
+**Riesgo abierto:** las features usan coordenadas normalizadas por ancho y alto de la imagen, así que una cámara con otra proporción deforma la mano. La app pide 960×540 (16:9), pero una webcam que solo dé 4:3 queda al filo. Corregirlo cambia la definición de las features e invalida las plantillas grabadas en `/plantillas`, así que se deja como decisión pendiente. Tampoco se ha medido con otra persona: 0.69 es el techo con la misma señante, y la precisión real solo se sabe probando con usuarios.
+
+---
+
 ## Un párrafo de síntesis
 
 Casi todas las decisiones se derivan de tres restricciones que fija el brief: **(1) no existe dataset de LSC** → clasificador few-shot por plantillas + herramienta de calibración + regresión sintética con plan de sustitución; **(2) el video del usuario es dato sensible** → todo el CV en el cliente, el API solo ve resultados, plantillas en localStorage; **(3) esto lo mantiene una persona con presupuesto ~cero** → SPA estática, SQLite sin deps nativas, stdlib de Node para crypto, workspaces de npm sin herramientas extra. Donde hubo que inventar números (umbrales, frames de hold) están nombrados, centralizados y marcados para calibrarse con datos reales.

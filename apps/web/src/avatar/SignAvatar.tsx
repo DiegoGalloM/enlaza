@@ -3,7 +3,7 @@ import type { AvatarScene } from './scene';
 import { createAvatarScene } from './scene';
 import type { LandmarksFile } from './retarget';
 import { createSignPlayer } from './retarget';
-import { animationUrlFor } from './animations';
+import { signAnimationFor } from './animations';
 import styles from './SignAvatar.module.css';
 
 interface Props {
@@ -12,6 +12,11 @@ interface Props {
   speed?: number;
   /** Vista de espejo: voltea la imagen para que el usuario pueda copiar de frente. */
   mirrored?: boolean;
+  /**
+   * Congela la seña en este instante (segundos dentro del ciclo). Solo para
+   * revisión cuadro por cuadro en /avatar-poc; el pelo sigue simulándose.
+   */
+  freezeAt?: number;
 }
 
 /**
@@ -19,24 +24,26 @@ interface Props {
  *
  * El movimiento sale de los landmarks extraídos del video de referencia de
  * ICAL y se retargetea a un modelo humanoide genérico (ver retarget.ts). Es
- * una aproximación: no modela abducción de dedos ni el eje real del pulgar,
- * así que la configuración manual no es fiel al detalle y NO debe presentarse
- * como referencia validada — la lección ya muestra el aviso de contenido
- * provisional.
+ * una aproximación con límites anatómicos, no una captura fiel de la
+ * configuración manual, y NO debe presentarse como referencia validada — la
+ * lección ya muestra el aviso de contenido provisional.
  */
-export function SignAvatar({ signId, speed = 1, mirrored = false }: Props) {
+export function SignAvatar({ signId, speed = 1, mirrored = false, freezeAt }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const speedRef = useRef(speed);
+  const freezeRef = useRef(freezeAt);
   const [status, setStatus] = useState<'cargando' | 'listo' | 'error'>('cargando');
 
   // La velocidad se lee dentro del loop de animación, que no se reinicia al
   // cambiarla: así el cambio a cámara lenta no reinicia la seña.
   speedRef.current = speed;
+  freezeRef.current = freezeAt;
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const url = animationUrlFor(signId);
-    if (!canvas || !url) return;
+    const animation = signAnimationFor(signId);
+    if (!canvas || !animation) return;
+    const { url } = animation;
 
     let disposed = false;
     let rafId = 0;
@@ -62,16 +69,24 @@ export function SignAvatar({ signId, speed = 1, mirrored = false }: Props) {
         scene = created;
         scene.resize(canvas.clientWidth, canvas.clientHeight);
         observer.observe(canvas);
+        const player = createSignPlayer(scene.vrm, scene.rig, landmarks, { window: animation.window });
+        canvas.dataset.duration = player.duration.toFixed(3);
+        // Gancho de revisión en desarrollo (como __enlazaFakeDetector): permite
+        // muestrear la animación desde tools/avatar sin depender del reloj.
+        if (import.meta.env.DEV) {
+          (window as unknown as { __enlazaAvatar?: unknown }).__enlazaAvatar = {
+            player,
+            vrm: scene.vrm,
+          };
+        }
         setStatus('listo');
-
-        const player = createSignPlayer(scene.vrm, landmarks);
         let last = performance.now();
         let signTime = 0;
         const loop = (now: number) => {
           const delta = (now - last) / 1000;
           last = now;
           signTime += delta * speedRef.current;
-          player.update(signTime);
+          player.update(freezeRef.current ?? signTime);
           scene!.render(delta);
           rafId = requestAnimationFrame(loop);
         };

@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm';
+import { addHairColliders, measureRig, type AvatarRig } from './rig';
 
 export interface AvatarScene {
   vrm: VRM;
+  /** Medidas del modelo en reposo (huesos y silueta), para el retargeting. */
+  rig: AvatarRig;
   /** Avanza la simulación (springbones, humanoid) y renderiza un frame. */
   render(deltaSeconds: number): void;
   resize(width: number, height: number): void;
@@ -45,6 +48,8 @@ export async function createAvatarScene(canvas: HTMLCanvasElement): Promise<Avat
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   scene.add(vrm.scene);
   vrm.scene.updateMatrixWorld(true);
+  const rig = measureRig(vrm);
+  addHairColliders(vrm, rig);
 
   // Encuadre de tren superior calculado desde el rig (la altura del modelo varía):
   // de la cintura a la punta del pelo, y a lo ancho el espacio de señas frente al
@@ -72,6 +77,7 @@ export async function createAvatarScene(canvas: HTMLCanvasElement): Promise<Avat
 
   return {
     vrm,
+    rig,
     render(deltaSeconds: number) {
       vrm.update(Math.min(deltaSeconds, MAX_PHYSICS_DELTA));
       renderer.render(scene, camera);
