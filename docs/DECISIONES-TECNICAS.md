@@ -209,6 +209,26 @@ Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Bueno
 **Por qué:** para practicar varias veces o buscar un mejor nivel (Bien → Excelente) había que refrescar la página, lo que reabre la cámara y recarga el detector. Registrar cada acierto no duplica el progreso: el API inserta el intento en el historial y el dominio de la seña es `INSERT OR IGNORE`.
 **Detalle:** en una seña estática, si la mano sigue en la pose al pulsar el botón, vuelve a validar en cuanto se sostienen los 8 frames. Es el mismo criterio de siempre, no un atajo.
 
+### D35. Límite del reconocimiento: solo ve la forma de la mano (Por favor lo expone)
+**Qué:** la plantilla de Por favor valida con su video y sin falsos positivos contra las otras 9 señas, pero **un puño quieto también la valida**:
+
+| Entrada | Resultado |
+|---|---|
+| Un solo frame del puño repetido 2 s | valida a los 0.3 s, puntaje 0.758 |
+| La seña completa | 0.62–0.69 |
+| Mano congelada contra Hola | no valida (0.56) |
+
+**Por qué pasa:** las features son la forma de la mano relativa a su propia muñeca (D17). No incluyen dónde está la mano respecto al cuerpo ni su trayectoria. En Hola la forma cambia durante la seña, así que DTW exige hacerla. En Por favor la forma es un puño casi constante; lo que la define es el lugar (pecho) y el movimiento (círculos), y ninguno de los dos entra en la comparación.
+
+**Opciones** (decisión pendiente, afecta la arquitectura):
+1. **Movimiento de la muñeca en la imagen:** desplazamiento respecto al inicio de la ventana, normalizado por el largo de la mano. HandLandmarker ya lo da, así que es barato. Distingue "puño quieto" de "puño en círculos", pero no dónde está el puño.
+2. **Posición respecto al cuerpo:** agregar pose (hombros, cara) en la app, por ejemplo con Holistic o PoseLandmarker. Captura el lugar de articulación, que en LSC es distintivo (Oviedo). Cuesta más cómputo en el cliente y cambia las features a una v3 con migración.
+3. **Aceptarlo por ahora**, documentado, mientras se completan las señas.
+
+**Recomendación:** 1 ahora y 2 cuando haya más señas que se distingan por lugar. Antes de elegir conviene medir cuántas de las 10 señas de cortesía comparten configuración manual.
+
+**Resultado de Por favor con el detector de la app** (`diagnose-practice.mjs`): valida en todos los escenarios, con 0.62–0.66 en cámara 16:9 y 0.66–0.69 en 4:3. Hola sigue validando y ninguna de las dos plantillas da falsos positivos contra las otras 9 señas (`verify-template.mjs`).
+
 ---
 
 ## Un párrafo de síntesis

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import {
+  VRMHumanBoneList,
   VRMSpringBoneCollider,
   VRMSpringBoneColliderShapeSphere,
   type VRM,
-  type VRMHumanBoneName,
   type VRMSpringBoneColliderGroup,
 } from '@pixiv/three-vrm';
 
@@ -25,6 +25,8 @@ export interface AvatarRig {
   position(bone: string): THREE.Vector3;
   /** Dirección unitaria del hueso hacia su hijo (o su extremo `_end`). */
   direction(bone: string): THREE.Vector3;
+  /** Punta del hueso en reposo: su hijo, o su extremo `_end` en las distales. */
+  tip(bone: string): THREE.Vector3;
   body: BodyProfile;
 }
 
@@ -59,37 +61,44 @@ const CHILD: Record<string, string> = {
 };
 
 export function measureRig(vrm: VRM): AvatarRig {
+  // Todo se lee AQUÍ, con el modelo en reposo, y se guarda. Leerlo después
+  // (perezosamente) devolvía posiciones de la pose animada: el retargeting de
+  // una seña posterior quedaba con direcciones de reposo falsas.
   vrm.scene.updateMatrixWorld(true);
   const positions = new Map<string, THREE.Vector3>();
-  const position = (bone: string) => {
-    let p = positions.get(bone);
-    if (!p) {
-      const node = vrm.humanoid.getNormalizedBoneNode(bone as VRMHumanBoneName);
-      p = node ? node.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3();
-      positions.set(bone, p);
-    }
-    return p;
-  };
+  const ends = new Map<string, THREE.Vector3>();
+  for (const bone of VRMHumanBoneList) {
+    const node = vrm.humanoid.getNormalizedBoneNode(bone);
+    if (node) positions.set(bone, node.getWorldPosition(new THREE.Vector3()));
+    // Falanges distales: la punta es el nodo `_end` hijo del hueso crudo.
+    const end = vrm.humanoid.getRawBoneNode(bone)?.children.find((c) => c.name.endsWith('_end'));
+    if (end) ends.set(bone, end.getWorldPosition(new THREE.Vector3()));
+  }
+
+  const position = (bone: string) => positions.get(bone) ?? new THREE.Vector3();
 
   const direction = (bone: string): THREE.Vector3 => {
     const side = bone.startsWith('left') ? 'left' : 'right';
     const part = bone.slice(side.length);
     const child = CHILD[part];
-    let tip: THREE.Vector3 | null = child ? position(side + child) : null;
-    if (!tip) {
-      // Falange distal: la punta es el nodo `_end` hijo del hueso crudo.
-      const raw = vrm.humanoid.getRawBoneNode(bone as VRMHumanBoneName);
-      const end = raw?.children.find((c) => c.name.endsWith('_end'));
-      tip = end ? end.getWorldPosition(new THREE.Vector3()) : null;
-    }
-    if (!tip) {
+    const tip = child ? positions.get(side + child) : ends.get(bone);
+    if (!tip || !positions.has(bone)) {
       const parentPart = Object.keys(CHILD).find((k) => CHILD[k] === part);
-      return parentPart ? direction(side + parentPart) : new THREE.Vector3(side === 'left' ? 1 : -1, 0, 0);
+      return parentPart
+        ? direction(side + parentPart)
+        : new THREE.Vector3(side === 'left' ? 1 : -1, 0, 0);
     }
     return tip.clone().sub(position(bone)).normalize();
   };
 
-  return { position, direction, body: measureBody(vrm, position) };
+  const tip = (bone: string): THREE.Vector3 => {
+    const side = bone.startsWith('left') ? 'left' : 'right';
+    const child = CHILD[bone.slice(side.length)];
+    const found = child ? positions.get(side + child) : ends.get(bone);
+    return (found ?? position(bone)).clone();
+  };
+
+  return { position, direction, tip, body: measureBody(vrm, position) };
 }
 
 function measureBody(vrm: VRM, position: (bone: string) => THREE.Vector3): BodyProfile {
@@ -154,6 +163,20 @@ function measureBody(vrm: VRM, position: (bone: string) => THREE.Vector3): BodyP
 }
 
 const SLEEVE_SCALE = 1.8;
+/**
+ * Gravedad de los mechones largos. El modelo trae 0.1 en el pelo de atrás y 0
+ * en los dos mechones del frente, con rigidez 0.5: el mechón conserva su forma
+ * respecto a la cabeza, y cuando la seña inclina la cabeza (Por favor) giraba
+ * entero y quedaba en diagonal, "flotando". Con 0.3 cae hacia abajo como pelo
+ * real. Solo en los mechones largos: en el flequillo la misma gravedad lo
+ * tiraba sobre los ojos. Elegido comparando 0.1/0.3/0.6/1.0 en Hola y Por favor.
+ */
+const LONG_HAIR_GRAVITY = 0.3;
+/**
+ * En este modelo (medido): J_Sec_Hair*_01..04 son el flequillo corto,
+ * _05..10 el pelo de atrás y _11/_12 los mechones largos del frente.
+ */
+const FIRST_LONG_STRAND = 5;
 const SLEEVE_SCALED = new WeakSet<object>();
 
 /** Huesos de brazo y mano, incluidos los secundarios de las mangas (J_Sec_*Arm*). */
@@ -239,6 +262,14 @@ export function addHairColliders(vrm: VRM, rig: AvatarRig): number {
     }
   }
 
+
+  // Mechones largos con más gravedad (ver LONG_HAIR_GRAVITY). El flequillo no.
+  for (const joint of manager.joints) {
+    const strand = /Hair\d+_(\d+)/.exec(joint.bone.name);
+    if (strand && Number(strand[1]) >= FIRST_LONG_STRAND) {
+      joint.settings.gravityPower = Math.max(joint.settings.gravityPower, LONG_HAIR_GRAVITY);
+    }
+  }
   const group: VRMSpringBoneColliderGroup = { name: 'enlaza-torso', colliders };
   for (const joint of manager.joints) {
     if (/hair/i.test(joint.bone.name)) joint.colliderGroups.push(group);

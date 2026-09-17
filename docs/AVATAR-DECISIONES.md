@@ -173,3 +173,80 @@ La prueba unitaria de continuidad del bucle falla si se vuelve al slerp directo 
 1. **Validación con ICAL** del tramo elegido (A17) y de la configuración manual. La imagen de arriba sirve para esa revisión.
 2. **Expresión facial:** no se transfiere (PDF, fase posterior).
 3. **Mano con mano:** no hay colisión entre las dos manos. Hola no la necesita; señas donde las manos se tocan sí.
+
+---
+
+# Tercera iteración: Por favor (2026-09-17)
+
+Primera seña después de Hola. El objetivo era repetir el proceso tal cual, pero la seña sacó a la luz cuatro problemas que Hola no tenía: el pulgar separado del puño, un giro falso de muñeca, el pelo atrapado por el brazo y el pelo rígido al inclinar la cabeza. Se corrigieron en el pipeline, así que también benefician a Hola y a las señas siguientes.
+
+![Video de referencia (arriba) y avatar (abajo), Por favor](img/avatar-por-favor-video-vs-avatar.png)
+
+## Receta para una seña nueva
+
+Es el proceso seguido con Por favor. Hay que cambiar el slug, el `signId` y los tiempos.
+
+1. **Ver la seña:** `node tools/avatar/video-sheet.mjs content/ical-2026-09/<slug>.mp4 hoja.png --cada=0.1`. Para acercar la mano: `--recorte=x,y,w,h --desde --hasta --ancho`. Decidir el tramo que es la seña (sin preparación ni regreso a reposo) y anotar qué se ve: mano dominante, configuración, contacto, movimiento, gestos no manuales.
+2. **Extraer landmarks:** `node tools/avatar/extract-landmarks.mjs content/ical-2026-09/<slug>.mp4 apps/web/public/avatar/<slug>.landmarks.json` (~2 min). Revisar en qué frames se detectó cada mano.
+3. **Registrar la seña** en `apps/web/src/avatar/animations.ts`, con `gloss`, `url` y `window`, y un comentario de por qué ese tramo. Con eso la lección ya muestra el avatar.
+4. **Revisar el avatar** en `/avatar-poc?sena=<signId>`:
+   - `&t=` congela la seña en un instante;
+   - `&angulo=70` la muestra de lado (contactos con el cuerpo);
+   - `capture-frames.mjs --tiempos=...` saca cuadros a comparar con la hoja del video;
+   - `measure-smoothness.mjs "<url>?sena=<signId>"` busca tirones (maxAcc aislados).
+5. **Plantilla de reconocimiento:** `npx vite-node tools/content/build-templates.mjs courtesy --only <todas las señas ya revisadas>`. `--only` reemplaza el bundle, así que hay que listar también las anteriores.
+6. **Verificar:**
+   - `npx vite-node tools/content/verify-template.mjs <signId>`: su video a varias velocidades, sin falsos positivos contra las otras 9.
+   - `npx vite-node tools/content/diagnose-practice.mjs <signId>`: detector real de la app, cámaras 16:9 y 4:3. Hay que registrar el video en su mapa `VIDEOS`.
+7. **Probar con la cámara** en la lección, y **documentar** aquí lo que la seña haya enseñado.
+
+## A20. Tramo de Por favor: solo el contacto (0.37–2.06 s)
+**Qué:** puño derecho apoyado en el lado izquierdo del pecho, con círculos pequeños. Antes de 0.37 s la mano sube desde el reposo; después de 2.06 s se retira y las manos se entrelazan.
+**Por qué:** si el tramo es solo el contacto, el cierre del bucle (A18) va de círculo a círculo sin despegar la mano del pecho. Si incluyera la subida, cada repetición despegaría la mano y volvería a subir, algo que no es parte de la seña.
+**No transferido:** la cabeza inclinada sí pasa al avatar (retargeting de cabeza), pero el gesto de súplica de la cara no. Es parte de la seña y queda como pendiente.
+
+## A21. El rig se mide completo al cargar, no a demanda
+**Qué:** `measureRig` lee de una vez, con el modelo en reposo, la posición de todos los huesos humanoides y de los nodos `_end`.
+**Por qué:** antes las posiciones se leían la primera vez que se pedían. Cualquier lectura posterior (otra seña, una herramienta de revisión) obtenía la pose animada como si fuera reposo. En la depuración de Por favor, la falange distal del pulgar derecho apuntaba al revés (+X). En la app no llegaba a pasar porque el reproductor se crea antes de animar, pero era una trampa latente.
+
+## A22. Contacto del pulgar preservado con IK
+**Qué:** si en el video la punta del pulgar está a menos de 0.45 largos de mano de algún punto de los dedos (PIP, DIP o yema), se toma ese mismo punto en la mano del avatar, se le suma el desplazamiento observado escalado, y se resuelve con CCD sobre metacarpo y falange proximal. El peso se apaga con `smoothstep` entre 0.45 y 0.30, para no forzar contactos que no existen.
+**Por qué:** copiar la dirección de cada falange no basta. El pulgar de VRoid es más largo y nace en otro punto, así que con las mismas direcciones su punta quedaba separada del puño.
+**Medido:** separación en largos de mano, avatar / video.
+- **Por favor** (pulgar a PIP del índice, t = 1.33 s): antes 0.49 / 0.32, después 0.30 / 0.32. En los demás instantes medidos quedó a ±0.07 del video.
+- **Hola** (pulgar al punto más cercano de los dedos, solo después del cambio): entre −0.03 y +0.11 del video, por ejemplo 0.43 / 0.46 a 1.3 s y 0.50 / 0.39 a 1.5 s.
+
+**Detalle:** las yemas se agregaron como candidatas después de medir Hola, donde el pulgar toca la punta del meñique y no un nudillo.
+
+## A23. Detecciones de mano implausibles se descartan
+**Qué:** se calcula la mediana, en todo el clip, del ancho entre los nudillos del índice y del meñique (landmarks 5 y 17). Si en un frame ese ancho baja del 80% de la mediana, esa mano (y el giro del antebrazo, que sale de ella) cuenta como no detectada, y la limpieza la interpola con los vecinos.
+**Por qué:** el ancho de la mano de una persona no cambia. En Por favor, MediaPipe "encogió" el puño de 6.5 a 4.6 cm en un frame, con un giro falso de 24° que se veía como un latigazo de la muñeca.
+**Resultado:**
+
+| Hueso | Aceleración máx. antes | Después |
+|---|---|---|
+| Muñeca | 315 rad/s² | 237 rad/s² |
+| Antebrazo | 54 rad/s² | 42 rad/s² |
+
+El giro que queda es continuo (≤ 6° por frame) y el video también muestra rotación del puño en ese tramo.
+
+## A24. La física del pelo se asienta antes del primer render
+**Qué:** al cargar se simula ~2.1 s sin mostrar nada: brazos en reposo con el pelo reiniciado (1 s), entrada gradual a la pose inicial de la seña (0.6 s) y asentamiento (0.5 s). Para eso, `SignPlayer.update` acepta un peso de mezcla con el reposo.
+**Por qué:** el brazo saltaba en un frame de la T-pose a la seña y atravesaba los mechones, que quedaban atrapados del lado equivocado de los colliders del antebrazo. En Por favor el mechón quedaba flotando por fuera del brazo, y distinto en cada carga, porque dependía de por dónde se atrapara. Con la pose congelada el pelo no oscilaba (0.00 cm por frame), lo que descartó la inestabilidad. Tras el cambio, tres cargas seguidas dan la misma imagen.
+
+## A25. Más gravedad en los mechones largos, no en el flequillo
+**Qué:** `gravityPower` mínimo de 0.3 en `J_Sec_Hair*_05..12`. Medido en este modelo: `_01..04` son el flequillo corto, `_05..10` el pelo de atrás y `_11/_12` los dos mechones largos del frente. Ese pelo trae 0.1 (atrás) y 0 (frente), con rigidez 0.5.
+**Por qué:** con tan poca gravedad el mechón conserva su forma respecto a la cabeza. Al inclinarla (Por favor) giraba entero y quedaba en diagonal. Se compararon 0.1, 0.3, 0.6 y 1.0 en Hola y en Por favor: 0.3 hace caer el pelo sin aplastarlo, y aplicarlo también al flequillo lo tiraba sobre los ojos.
+**Tropiezo:** la primera versión escribió el regex sin barras invertidas y no afectaba a ningún mechón. Se detectó midiendo la gravedad efectiva de cada mechón en la página, no mirando capturas.
+
+![Pelo en Por favor: antes (izquierda) y después (derecha)](img/avatar-por-favor-pelo-antes-despues.png)
+
+## A26. Revisión con vista lateral y selector de seña
+**Qué:** `/avatar-poc?sena=<signId>&t=<s>&angulo=<grados>` elige la seña, la congela y gira la cámara (`AvatarScene.setCameraYaw`).
+**Por qué:** de frente no se distingue si una mano toca el cuerpo o flota delante. Con `angulo=70` se confirmó que el puño de Por favor toca la camisa sin atravesarla. Queda para revisar cualquier seña con contacto.
+
+## Verificación de la tercera iteración
+- **Pruebas:** web 25/25 (nuevas: descarte de manos implausibles). cv-model 35/35. `tsc -b` y `vite build` sin errores.
+- **Suavidad** (`measure-smoothness`): Por favor tiene un ciclo de 2.08 s; brazo 70, antebrazo 42 y dedos ≤ 142 rad/s². Hola no cambió respecto a A18.
+- **e2e:** no se pudo correr porque el puerto 3001 ya estaba ocupado. Esta iteración no toca el flujo que cubre.
+- **Pendiente nuevo:** la limitación del reconocimiento que expone Por favor, en D35 de DECISIONES-TECNICAS.md.

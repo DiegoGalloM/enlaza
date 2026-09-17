@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { solveTwoBoneIK } from '../src/avatar/retarget';
+import { dropImplausibleHands, solveTwoBoneIK, type LandmarkFrame } from '../src/avatar/retarget';
 import { forwardPushOut, type BodyProfile } from '../src/avatar/rig';
 
 describe('solveTwoBoneIK', () => {
@@ -58,5 +58,40 @@ describe('forwardPushOut', () => {
     const edge = forwardPushOut(body, new THREE.Vector3(0.13, 0.5, 0), 0);
     expect(edge).toBeLessThan(center);
     expect(edge).toBeGreaterThan(0);
+  });
+});
+
+describe('dropImplausibleHands', () => {
+  /** Mano de 21 puntos con los nudillos de índice (5) y meñique (17) a `span` metros. */
+  const hand = (span: number) =>
+    Array.from({ length: 21 }, (_, i) => {
+      if (i === 5) return [span / 2, 0, 0];
+      if (i === 17) return [-span / 2, 0, 0];
+      return [0, i * 0.01, 0];
+    });
+  const frame = (t: number, span: number | null): LandmarkFrame => ({
+    t,
+    poseWorld: null,
+    leftHandWorld: null,
+    rightHandWorld: span === null ? null : hand(span),
+  });
+
+  it('descarta la mano de un frame cuyo ancho de nudillos "encoge" (MediaPipe la estimó mal)', () => {
+    const frames = [frame(0, 0.065), frame(0.03, 0.064), frame(0.06, 0.046), frame(0.1, 0.066)];
+    const kept = dropImplausibleHands(frames);
+    expect(kept.map((f) => f.rightHandWorld !== null)).toEqual([true, true, false, true]);
+    // No toca los frames originales ni lo demás del frame.
+    expect(frames[2].rightHandWorld).not.toBeNull();
+    expect(kept[2].t).toBe(0.06);
+  });
+
+  it('respeta variaciones normales y frames sin mano', () => {
+    const frames = [frame(0, 0.06), frame(0.03, null), frame(0.06, 0.055), frame(0.1, 0.065)];
+    expect(dropImplausibleHands(frames).map((f) => f.rightHandWorld !== null)).toEqual([
+      true,
+      false,
+      true,
+      true,
+    ]);
   });
 });

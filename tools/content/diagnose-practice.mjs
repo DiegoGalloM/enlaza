@@ -2,7 +2,9 @@
  * Diagnóstico de la validación con cámara: ¿reconocería la app una seña hecha
  * por una persona real, no solo el video del que salió la plantilla?
  *
- * Uso: npx vite-node tools/content/diagnose-practice.mjs [signId] [--hasta=1.85]
+ * Uso: npx vite-node tools/content/diagnose-practice.mjs [signId] [--hasta=<s>]
+ *   --hasta: fin de "solo la seña"; por defecto, el fin del tramo registrado
+ *   en apps/web/src/avatar/animations.ts.
  *
  * A diferencia de verify-template.mjs (que reutiliza los landmarks de
  * Holistic con los que se construyó la plantilla), aquí los frames salen del
@@ -20,11 +22,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
+import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
 
 const args = process.argv.slice(2);
 const signId = args.find((a) => !a.startsWith('--')) ?? 'lsc-cortesia-5';
-const until = Number(args.find((a) => a.startsWith('--hasta='))?.split('=')[1] ?? 1.85);
-const VIDEOS = { 'lsc-cortesia-5': 'content/ical-2026-09/hola.mp4' };
+const until = Number(
+  args.find((a) => a.startsWith('--hasta='))?.split('=')[1] ??
+    signAnimationFor(signId)?.window?.[1] ??
+    Infinity,
+);
+const VIDEOS = {
+  'lsc-cortesia-4': 'content/ical-2026-09/por-favor.mp4',
+  'lsc-cortesia-5': 'content/ical-2026-09/hola.mp4',
+};
 const video = VIDEOS[signId];
 if (!video) throw new Error(`Sin video registrado para ${signId}`);
 

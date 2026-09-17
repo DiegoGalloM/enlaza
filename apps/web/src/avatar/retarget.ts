@@ -93,6 +93,24 @@ const FINGER_LIMITS = {
   Distal: { flex: [0, 1.4], abduction: 0 },
 } as const;
 const THUMB_MAX_SWING = 1.1;
+/**
+ * Contacto del pulgar: si en el video la punta del pulgar está a menos de esta
+ * fracción del largo de la mano de alguna articulación de los dedos, se
+ * considera contacto y se preserva (ver preserveThumbContact).
+ */
+const THUMB_CONTACT_RATIO = 0.45;
+const THUMB_CONTACT_FADE = 0.15;
+/**
+ * Puntos de los dedos que puede tocar el pulgar: landmark → [dedo, cuántas
+ * falanges recorrer desde la base]. 1 = articulación PIP, 2 = DIP, 3 = yema.
+ * Las yemas hacen falta para contactos como el de Hola (pulgar con meñique).
+ */
+const THUMB_CONTACT_JOINTS: [number, string, number][] = [
+  [6, 'Index', 1], [7, 'Index', 2], [8, 'Index', 3],
+  [10, 'Middle', 1], [11, 'Middle', 2], [12, 'Middle', 3],
+  [14, 'Ring', 1], [15, 'Ring', 2], [16, 'Ring', 3],
+  [18, 'Little', 1], [19, 'Little', 2], [20, 'Little', 3],
+];
 
 const MIN_VISIBILITY = 0.5;
 /** Holgura entre la mano y la superficie del cuerpo. */
@@ -354,6 +372,101 @@ function retargetFingers(
     out.set(bone, q);
     parent.multiply(q);
   }
+
+  preserveThumbContact(hand, side, toHandLocal, rig, out);
+}
+
+/**
+ * Posiciones de una cadena de huesos en el marco de la mano (origen en el
+ * hueso de la mano, orientación de reposo), dadas sus rotaciones locales.
+ * Devuelve el origen de cada hueso y, al final, la punta del último.
+ */
+function handChainPositions(
+  rig: AvatarRig,
+  side: Side,
+  bones: string[],
+  out: BoneRotations,
+): THREE.Vector3[] {
+  const origin = rig.position(`${side}Hand`);
+  const q = new THREE.Quaternion();
+  let pos = rig.position(`${side}${bones[0]}`).clone().sub(origin);
+  const points = [pos.clone()];
+  for (const part of bones) {
+    const bone = `${side}${part}`;
+    q.multiply(out.get(bone) ?? new THREE.Quaternion());
+    const offset = rig.tip(bone).sub(rig.position(bone)).applyQuaternion(q);
+    pos = pos.clone().add(offset);
+    points.push(pos.clone());
+  }
+  return points;
+}
+
+/**
+ * Preserva el contacto del pulgar con los dedos. Seguir solo la dirección de
+ * cada falange no basta: el pulgar de VRoid es más largo y nace en otro punto
+ * que el de una persona, así que con las mismas direcciones su punta quedaba
+ * separada del puño (Por favor: hasta 0.49 largos de mano del índice, contra
+ * 0.32 en el video). Si en el video la punta del pulgar está cerca de una
+ * articulación de los dedos, se lleva la punta del avatar al mismo punto
+ * relativo con IK (CCD) sobre metacarpo y falange proximal, con peso que se
+ * apaga a medida que el pulgar se aleja para no forzar contactos que no hay.
+ */
+function preserveThumbContact(
+  hand: number[][],
+  side: Side,
+  toHandLocal: THREE.Quaternion,
+  rig: AvatarRig,
+  out: BoneRotations,
+): void {
+  const observed = (i: number) =>
+    toThree(hand[i]).sub(toThree(hand[0])).applyQuaternion(toHandLocal);
+  const observedHandLength = observed(9).length();
+  const avatarHandLength = rig.position(`${side}MiddleProximal`).distanceTo(rig.position(`${side}Hand`));
+  if (observedHandLength < 1e-6) return;
+
+  const tipObserved = observed(4);
+  let nearest = THUMB_CONTACT_JOINTS[0];
+  for (const candidate of THUMB_CONTACT_JOINTS) {
+    if (tipObserved.distanceTo(observed(candidate[0])) < tipObserved.distanceTo(observed(nearest[0]))) {
+      nearest = candidate;
+    }
+  }
+  const ratio = tipObserved.distanceTo(observed(nearest[0])) / observedHandLength;
+  const weight = smoothstep((THUMB_CONTACT_RATIO - ratio) / THUMB_CONTACT_FADE);
+  if (weight <= 0) return;
+
+  // Mismo punto relativo en la mano del avatar: la articulación del avatar más
+  // el desplazamiento observado, escalado por el largo de mano.
+  const [landmark, finger, phalanges] = nearest;
+  const chain = PHALANGES.slice(0, phalanges).map((p) => finger + p);
+  const joint = handChainPositions(rig, side, chain, out).at(-1)!;
+  const target = joint.add(
+    tipObserved.sub(observed(landmark)).multiplyScalar(avatarHandLength / observedHandLength),
+  );
+
+  const thumb = ['ThumbMetacarpal', 'ThumbProximal', 'ThumbDistal'];
+  const original = thumb.map((part) => (out.get(`${side}${part}`) ?? new THREE.Quaternion()).clone());
+  for (let iteration = 0; iteration < 8; iteration++) {
+    for (const j of [1, 0]) {
+      const points = handChainPositions(rig, side, thumb, out);
+      const toEnd = points[3].clone().sub(points[j]);
+      const toTarget = target.clone().sub(points[j]);
+      if (toEnd.lengthSq() < 1e-12 || toTarget.lengthSq() < 1e-12) continue;
+      // Rotación en el marco de la mano, llevada al marco local del hueso.
+      const parentQ = new THREE.Quaternion();
+      for (let k = 0; k < j; k++) parentQ.multiply(out.get(`${side}${thumb[k]}`)!);
+      const delta = new THREE.Quaternion().setFromUnitVectors(toEnd.normalize(), toTarget.normalize());
+      const bone = `${side}${thumb[j]}`;
+      const local = parentQ.clone().invert().multiply(delta).multiply(parentQ).multiply(out.get(bone)!);
+      const angle = 2 * Math.acos(Math.min(1, Math.abs(local.w)));
+      if (angle > THUMB_MAX_SWING) local.slerp(new THREE.Quaternion(), 1 - THUMB_MAX_SWING / angle);
+      out.set(bone, local);
+    }
+  }
+  thumb.forEach((part, i) => {
+    const bone = `${side}${part}`;
+    out.set(bone, original[i].clone().slerp(out.get(bone)!, weight));
+  });
 }
 
 function retargetHead(frame: LandmarkFrame, out: BoneRotations): void {
@@ -407,6 +520,36 @@ export function armScales(rig: AvatarRig, frames: LandmarkFrame[]): Record<Side,
   return { left: scaleFor('left'), right: scaleFor('right') };
 }
 
+/** Fracción de la mediana del ancho de nudillos bajo la cual una mano es implausible. */
+const MIN_KNUCKLE_SPAN = 0.8;
+
+/**
+ * Descarta las detecciones de mano geométricamente imposibles. El ancho entre
+ * los nudillos del índice y del meñique (landmarks 5 y 17) de una persona no
+ * cambia; si en un frame "encoge" muy por debajo de su mediana en el clip,
+ * MediaPipe estimó mal la mano (típico en un puño) y su orientación salta. En
+ * Por favor: 6.5 → 4.6 cm en un frame, con un giro falso de 24° que se veía
+ * como un latigazo de la muñeca. Esos frames quedan sin mano y la limpieza
+ * los rellena interpolando entre vecinos.
+ */
+export function dropImplausibleHands(frames: LandmarkFrame[]): LandmarkFrame[] {
+  const span = (h: number[][]) => Math.hypot(h[5][0] - h[17][0], h[5][1] - h[17][1], h[5][2] - h[17][2]);
+  const medians = {} as Record<Side, number>;
+  for (const side of ['left', 'right'] as const) {
+    medians[side] = median(frames.flatMap((f) => (f[`${side}HandWorld`] ? [span(f[`${side}HandWorld`]!)] : [])));
+  }
+  return frames.map((f) => {
+    let out = f;
+    for (const side of ['left', 'right'] as const) {
+      const hand = f[`${side}HandWorld`];
+      if (hand && span(hand) < MIN_KNUCKLE_SPAN * medians[side]) {
+        out = { ...out, [`${side}HandWorld`]: null };
+      }
+    }
+    return out;
+  });
+}
+
 /**
  * Pose de reposo por hueso, para los tramos sin detección (p. ej. la mano
  * que cuelga fuera de cuadro). Brazos abajo junto al cuerpo, dedos
@@ -430,8 +573,12 @@ export function restRotation(bone: string): THREE.Quaternion {
 }
 
 export interface SignPlayer {
-  /** Aplica la pose interpolada para el tiempo dado (en segundos, en loop). */
-  update(elapsedSeconds: number): void;
+  /**
+   * Aplica la pose interpolada para el tiempo dado (en segundos, en loop).
+   * `weight` < 1 la mezcla con la pose de reposo (0 = reposo), para entrar a
+   * la seña de forma gradual.
+   */
+  update(elapsedSeconds: number, weight?: number): void;
   /** Duración de un ciclo, incluida la transición de regreso al inicio. */
   duration: number;
 }
@@ -457,17 +604,25 @@ export function createSignPlayer(
   options: SignPlayerOptions = {},
 ): SignPlayer {
   const ctx: RetargetContext = { rig, armScale: armScales(rig, data.frames) };
-  const { frames } = data;
+  const { frames: detected } = data;
+  const frames = dropImplausibleHands(detected);
   const [from, to] = options.window ?? [-Infinity, Infinity];
 
   // Una mano que nunca se detecta en la seña está fuera de cuadro (en el
   // regazo): la pose estima ese brazo a ciegas y lo dejaba flotando frente al
   // vientre. Ese brazo va en reposo durante todo el clip.
   const unseen = (['left', 'right'] as const).filter((side) =>
-    frames.every((f) => f.t < from || f.t > to || !f[`${side}HandWorld`]),
+    detected.every((f) => f.t < from || f.t > to || !f[`${side}HandWorld`]),
   );
-  const perFrame = frames.map((f) => {
+  const perFrame = frames.map((f, i) => {
     const rotations = retargetFrame(f, ctx);
+    // Mano descartada por implausible: el antebrazo tampoco se usa ese frame,
+    // porque su giro sale de la mano. Ambos se interpolan con los vecinos.
+    for (const side of ['left', 'right'] as const) {
+      if (detected[i][`${side}HandWorld`] && !f[`${side}HandWorld`]) {
+        rotations.delete(`${side}LowerArm`);
+      }
+    }
     for (const side of unseen) {
       for (const bone of rotations.keys()) if (bone.startsWith(side)) rotations.delete(bone);
     }
@@ -497,7 +652,7 @@ export function createSignPlayer(
   const duration = clip.frameCount / clip.fps;
   return {
     duration,
-    update(elapsedSeconds: number) {
+    update(elapsedSeconds: number, weight = 1) {
       const exact = (((elapsedSeconds % duration) + duration) % duration) * clip.fps;
       const i = Math.floor(exact) % clip.frameCount;
       // El último frame es la pose inicial (cierre del bucle): envolver a 0 es continuo.
@@ -506,6 +661,7 @@ export function createSignPlayer(
       for (const [bone, node] of nodes) {
         const track = clip.tracks.get(bone)!;
         node.quaternion.slerpQuaternions(track[i], track[next], alpha);
+        if (weight < 1) node.quaternion.copy(restRotation(bone).slerp(node.quaternion, weight));
       }
     },
   };

@@ -10,6 +10,8 @@
  * sin animación no dispare un 404 en cada lección.
  */
 export interface SignAnimation {
+  /** Glosa, solo para pantallas de revisión (la lección usa la del catálogo). */
+  gloss: string;
   url: string;
   /**
    * Tramo del video que es la seña, en segundos: se deja fuera la preparación
@@ -25,8 +27,23 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
   // las manos se entrelazan en reposo, que no es parte de la seña. Empieza en
   // 0.15 s porque el video arranca con la mano ya en movimiento y antes no
   // hay datos con qué suavizar.
-  'lsc-cortesia-5': { url: '/avatar/hola.landmarks.json', window: [0.15, 1.8] },
+  'lsc-cortesia-5': { gloss: 'Hola', url: '/avatar/hola.landmarks.json', window: [0.15, 1.8] },
+  // Por favor: puño derecho apoyado en el lado izquierdo del pecho, con
+  // círculos pequeños (0.37–2.03 s en el video). Antes la mano sube desde el
+  // reposo y después se retira y las manos se entrelazan: nada de eso es la
+  // seña. El tramo es solo el contacto, así el bucle repite los círculos sin
+  // despegar la mano del pecho. La cabeza inclinada y el gesto de súplica
+  // también son parte de la seña, pero la expresión facial aún no se transfiere.
+  'lsc-cortesia-4': {
+    gloss: 'Por favor',
+    url: '/avatar/por-favor.landmarks.json',
+    window: [0.37, 2.06],
+  },
 };
+
+export function listSignAnimations(): { signId: string; gloss: string }[] {
+  return Object.entries(SIGN_ANIMATIONS).map(([signId, { gloss }]) => ({ signId, gloss }));
+}
 
 export function hasSignAnimation(signId: string): boolean {
   return signId in SIGN_ANIMATIONS;

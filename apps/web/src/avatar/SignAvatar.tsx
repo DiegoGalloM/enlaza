@@ -2,9 +2,40 @@ import { useEffect, useRef, useState } from 'react';
 import type { AvatarScene } from './scene';
 import { createAvatarScene } from './scene';
 import type { LandmarksFile } from './retarget';
-import { createSignPlayer } from './retarget';
+import { createSignPlayer, type SignPlayer } from './retarget';
 import { signAnimationFor } from './animations';
 import styles from './SignAvatar.module.css';
+
+const SETTLE_STEP = 1 / 60;
+
+/**
+ * Asienta la física del pelo antes del primer render. Sin esto, el brazo
+ * salta en un frame de la T-pose a la seña, atraviesa los mechones y estos
+ * quedan atrapados del lado equivocado de los colliders del brazo (en Por
+ * favor el mechón quedaba flotando por fuera del antebrazo). En cambio se
+ * simula lo que haría una persona: brazos abajo en reposo, pelo reiniciado y
+ * asentado, y entrada gradual a la pose inicial de la seña.
+ */
+function settlePhysics(scene: AvatarScene, player: SignPlayer, startSeconds: number): void {
+  player.update(startSeconds, 0);
+  scene.simulate(0);
+  scene.vrm.springBoneManager?.reset();
+  const steps = (seconds: number) => Math.round(seconds / SETTLE_STEP);
+  for (let i = 0; i < steps(1); i++) {
+    player.update(startSeconds, 0);
+    scene.simulate(SETTLE_STEP);
+  }
+  const blend = steps(0.6);
+  for (let i = 1; i <= blend; i++) {
+    const x = i / blend;
+    player.update(startSeconds, x * x * (3 - 2 * x));
+    scene.simulate(SETTLE_STEP);
+  }
+  for (let i = 0; i < steps(0.5); i++) {
+    player.update(startSeconds);
+    scene.simulate(SETTLE_STEP);
+  }
+}
 
 interface Props {
   signId: string;
@@ -17,6 +48,8 @@ interface Props {
    * revisión cuadro por cuadro en /avatar-poc; el pelo sigue simulándose.
    */
   freezeAt?: number;
+  /** Ángulo de cámara en grados (0 = de frente). Solo para revisión. */
+  cameraYaw?: number;
 }
 
 /**
@@ -28,16 +61,24 @@ interface Props {
  * configuración manual, y NO debe presentarse como referencia validada — la
  * lección ya muestra el aviso de contenido provisional.
  */
-export function SignAvatar({ signId, speed = 1, mirrored = false, freezeAt }: Props) {
+export function SignAvatar({
+  signId,
+  speed = 1,
+  mirrored = false,
+  freezeAt,
+  cameraYaw = 0,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const speedRef = useRef(speed);
   const freezeRef = useRef(freezeAt);
+  const yawRef = useRef(cameraYaw);
   const [status, setStatus] = useState<'cargando' | 'listo' | 'error'>('cargando');
 
   // La velocidad se lee dentro del loop de animación, que no se reinicia al
   // cambiarla: así el cambio a cámara lenta no reinicia la seña.
   speedRef.current = speed;
   freezeRef.current = freezeAt;
+  yawRef.current = cameraYaw;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -77,8 +118,10 @@ export function SignAvatar({ signId, speed = 1, mirrored = false, freezeAt }: Pr
           (window as unknown as { __enlazaAvatar?: unknown }).__enlazaAvatar = {
             player,
             vrm: scene.vrm,
+            rig: scene.rig,
           };
         }
+        settlePhysics(scene, player, freezeRef.current ?? 0);
         setStatus('listo');
         let last = performance.now();
         let signTime = 0;
@@ -87,6 +130,7 @@ export function SignAvatar({ signId, speed = 1, mirrored = false, freezeAt }: Pr
           last = now;
           signTime += delta * speedRef.current;
           player.update(freezeRef.current ?? signTime);
+          scene!.setCameraYaw(yawRef.current);
           scene!.render(delta);
           rafId = requestAnimationFrame(loop);
         };

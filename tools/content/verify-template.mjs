@@ -105,7 +105,8 @@ try {
   for (const other of COURTESY.filter((c) => c.signId !== targetId)) {
     const { validated, bestScore } = replay(await framesFor(extractor, other.slug), 1);
     console.log(
-      `   ${validated ? 'FALSO POSITIVO' : 'ok            '} ${other.gloss.padEnd(16)} puntaje ${bestScore.toFixed(3)}`,
+      `   ${validated ? 'FALSO POSITIVO' : 'ok            '} ${other.gloss.padEnd(16)} ` +
+        (bestScore > 0 ? `puntaje ${bestScore.toFixed(3)}` : 'siempre ganó otra plantilla'),
     );
     if (validated) failures++;
   }
