@@ -23,19 +23,20 @@ const INIT_SCRIPT = `
 
   const signId = 'lsc-alfabeto-1-0'; // letra A, estática
   localStorage.setItem(
-    'enlaza.templates.lsc.v1',
-    JSON.stringify({ version: 1, templates: [{ signId, type: 'static', vector }] }),
+    'enlaza.templates.lsc.v2',
+    JSON.stringify({ version: 2, templates: [{ signId, type: 'static', vector }] }),
   );
 
   window.__enlazaFakeDetector = () => {
     let timer = null;
     return {
       needsCamera: false,
+      aspect: 1,
       start: async (_video, onFrame) => {
         let t = 0;
         timer = setInterval(() => {
           t += 33;
-          onFrame({ landmarks: pose, handedness: 'Right', timestampMs: t });
+          onFrame({ landmarks: pose, handedness: 'Right', timestampMs: t, aspect: 1 });
         }, 33);
       },
       stop: () => {

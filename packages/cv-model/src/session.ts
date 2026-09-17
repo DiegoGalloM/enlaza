@@ -117,7 +117,7 @@ export class SessionValidator {
 
   feed(frame: HandFrame): SessionVerdict {
     if (this.done) return { status: 'correct', best: null };
-    const vector = toFeatureVector(frame.landmarks, frame.handedness);
+    const vector = toFeatureVector(frame.landmarks, frame.handedness, frame.aspect);
     return this.signType === 'static'
       ? this.feedStatic(vector)
       : this.feedDynamic(vector, frame.timestampMs);

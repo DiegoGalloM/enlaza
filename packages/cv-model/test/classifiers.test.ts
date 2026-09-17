@@ -14,7 +14,7 @@ describe('static classifier', () => {
   const rng = mulberry32(7);
   const poseA = randomPose(rng);
   const poseB = randomPose(rng);
-  const vec = (p: ReturnType<typeof randomPose>) => toFeatureVector(p, 'Right');
+  const vec = (p: ReturnType<typeof randomPose>) => toFeatureVector(p, 'Right', 1);
 
   const templates = [
     buildStaticTemplate('sign-a', [vec(poseA), vec(jitterPose(poseA, rng))]),
@@ -47,7 +47,7 @@ describe('dynamic classifier', () => {
   const seqA = randomSequence(rng);
   const seqB = randomSequence(rng);
   const toVectors = (frames: ReturnType<typeof randomSequence>) =>
-    frames.map((f) => toFeatureVector(f, 'Right'));
+    frames.map((f) => toFeatureVector(f, 'Right', 1));
 
   const templates = [
     buildDynamicTemplate('word-a', toVectors(seqA)),

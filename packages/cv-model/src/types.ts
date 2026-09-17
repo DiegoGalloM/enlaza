@@ -18,6 +18,11 @@ export interface HandFrame {
   handedness: Handedness;
   /** Milliseconds, monotonic (e.g. video timestamp). */
   timestampMs: number;
+  /**
+   * Proporción (ancho / alto) de la imagen de la que salieron los landmarks.
+   * Obligatoria: sin ella las features dependen de la cámara (ver toFeatureVector).
+   */
+  aspect: number;
 }
 
 /**

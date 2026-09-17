@@ -31,7 +31,7 @@ const CLASSES = 27; // full LSC alphabet size
 const TRAIN_PER_CLASS = 6;
 const TEST_PER_CLASS = 20;
 
-const vec = (p: Landmark[]) => toFeatureVector(p, 'Right');
+const vec = (p: Landmark[]) => toFeatureVector(p, 'Right', 1);
 
 describe('model regression: static signs (alphabet-sized)', () => {
   const rng = mulberry32(2026);
@@ -71,7 +71,7 @@ describe('model regression: static signs (alphabet-sized)', () => {
     let correct = 0;
     prototypes.forEach((proto, c) => {
       const mirrored = mirrorPose(jitterPose(proto, rng));
-      const sample = toFeatureVector(mirrored, 'Left');
+      const sample = toFeatureVector(mirrored, 'Left', 1);
       const ranked = classifyStatic(sample, templates);
       if (ranked[0]!.signId === `letra-${c}`) correct++;
     });

@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand } from './common.mjs';
+import { appHandedness, chooseHand, videoAspect } from './common.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 
 const BUNDLE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
@@ -77,9 +77,8 @@ function replay(result, speed) {
     }
     const verdict = validator.feed({
       landmarks: lm.map(([x, y, z]) => ({ x, y, z })),
-      // Misma convención que common.mjs: HandLandmarker etiqueta asumiendo
-      // imagen espejada, así que la mano anatómica derecha llega como 'Left'.
-      handedness: side === 'right' ? 'Left' : 'Right',
+      handedness: appHandedness(side),
+      aspect: videoAspect(result),
       timestampMs: (frame.t * 1000) / speed,
     });
     if (verdict.best?.signId === targetId) bestScore = Math.max(bestScore, verdict.best.score);
@@ -106,7 +105,8 @@ try {
   for (const other of COURTESY.filter((c) => c.signId !== targetId)) {
     const { validated, bestScore } = replay(await framesFor(extractor, other.slug), 1);
     console.log(
-      `   ${validated ? 'FALSO POSITIVO' : 'ok            '} ${other.gloss.padEnd(16)} puntaje ${bestScore.toFixed(3)}`,
+      `   ${validated ? 'FALSO POSITIVO' : 'ok            '} ${other.gloss.padEnd(16)} ` +
+        (bestScore > 0 ? `puntaje ${bestScore.toFixed(3)}` : 'siempre ganó otra plantilla'),
     );
     if (validated) failures++;
   }

@@ -9,12 +9,13 @@ import type { HandFrame, SignTemplate } from '@enlaza/cv-model';
 import { Button } from '../components/Button';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
-import { createDetector } from '../cv/detector';
+import { cameraAspect, createDetector } from '../cv/detector';
 import {
   exportTemplates,
   fetchBundledTemplates,
   importTemplates,
   loadTemplates,
+  migrateLegacyTemplates,
   removeTemplate,
   upsertTemplate,
 } from '../cv/templates';
@@ -89,6 +90,12 @@ export function Calibration() {
           video.srcObject = stream;
           await video.play();
         }
+        // Plantillas grabadas antes de la corrección de proporción: se migran
+        // con la proporción de esta cámara, que es la que las grabó.
+        const aspect = cameraAspect(video, detector);
+        if (aspect && migrateLegacyTemplates(aspect).length > 0 && !cancelled) {
+          setTemplates(loadTemplates());
+        }
         await detector.start(video, (frame) => {
           latestFrame.current = frame;
           setHandVisible(frame !== null);
@@ -121,7 +128,7 @@ export function Calibration() {
       setMessage('No vemos ninguna mano en este momento.');
       return;
     }
-    const vector = toFeatureVector(frame.landmarks, frame.handedness);
+    const vector = toFeatureVector(frame.landmarks, frame.handedness, frame.aspect);
     const next = [...samples, vector];
     setSamples(next);
     setMessage(`Muestra ${next.length} capturada.`);
@@ -146,7 +153,7 @@ export function Calibration() {
         setMessage('No capturamos suficientes cuadros con la mano visible. Intenta de nuevo.');
         return;
       }
-      const vectors = frames.map((f) => toFeatureVector(f.landmarks, f.handedness));
+      const vectors = frames.map((f) => toFeatureVector(f.landmarks, f.handedness, f.aspect));
       setTemplates(upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors)));
       setMessage(`Plantilla dinámica de "${selectedSign.gloss}" guardada (${frames.length} cuadros).`);
     }, DYNAMIC_CAPTURE_MS);

@@ -9,7 +9,7 @@ import { jitterPose, mulberry32, randomPose, randomSequence } from './synthetic'
 const rng = mulberry32(23);
 const poseA = randomPose(rng);
 const poseB = randomPose(rng);
-const vec = (p: Landmark[]) => toFeatureVector(p, 'Right');
+const vec = (p: Landmark[]) => toFeatureVector(p, 'Right', 1);
 
 const staticTemplates = [
   buildStaticTemplate('letra-a', [vec(poseA)]),
@@ -17,7 +17,7 @@ const staticTemplates = [
 ];
 
 function frame(pose: Landmark[], timestampMs: number): HandFrame {
-  return { landmarks: pose, handedness: 'Right', timestampMs };
+  return { landmarks: pose, handedness: 'Right', timestampMs, aspect: 1 };
 }
 
 describe('SessionValidator (static signs)', () => {
