@@ -52,6 +52,12 @@ export interface DynamicTemplate {
    * grabadas en /plantillas no la traen y usan la ventana por defecto.
    */
   sourceMs?: number;
+  /**
+   * Trayectoria de la muñeca (SEQUENCE_LENGTH × [x, y], en largos de mano,
+   * centrada; ver motion.ts). Opcional: plantillas sin movimiento se comparan
+   * solo por forma.
+   */
+  motion?: number[][];
 }
 
 export type SignTemplate = StaticTemplate | DynamicTemplate;

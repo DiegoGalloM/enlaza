@@ -19,9 +19,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector, videoAspect } from './common.mjs';
+import { chooseHand, frameVector, frameWrist, videoAspect } from './common.mjs';
 import {
   buildDynamicTemplate,
+  motionTrajectory,
   buildStaticTemplate,
   euclideanDistance,
 } from '../../packages/cv-model/src/index.ts';
@@ -195,7 +196,12 @@ export async function buildAlphabet(extractor) {
     const sourceMs = Math.round((withHand[withHand.length - 1].t - withHand[0].t) * 1000);
     templates.push(
       DYNAMIC_LETTERS.has(letter)
-        ? buildDynamicTemplate(signId, vectors, sourceMs)
+        ? buildDynamicTemplate(
+            signId,
+            vectors,
+            sourceMs,
+            motionTrajectory(withHand.map((f) => frameWrist(f, side, videoAspect(result)))),
+          )
         : buildStaticTemplate(signId, stillestWindow(vectors, STATIC_WINDOW)),
     );
     console.log(

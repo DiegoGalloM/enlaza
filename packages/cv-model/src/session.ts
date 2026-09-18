@@ -1,6 +1,12 @@
 import { toFeatureVector } from './normalize';
 import { STATIC_THRESHOLD, classifyStatic } from './staticClassifier';
-import { DYNAMIC_THRESHOLD, classifyDynamic } from './dynamicClassifier';
+import {
+  DYNAMIC_THRESHOLD,
+  MIN_MOTION_RATIO,
+  MOTION_WEIGHT,
+  classifyDynamic,
+} from './dynamicClassifier';
+import { motionTrajectory, wristSample, type WristSample } from './motion';
 import type {
   ClassifyResult,
   DynamicTemplate,
@@ -32,6 +38,10 @@ export interface SessionOptions {
   checkIntervalMs?: number;
   staticThreshold?: number;
   dynamicThreshold?: number;
+  /** Peso del movimiento de la muñeca en señas dinámicas (0 = solo forma). */
+  motionWeight?: number;
+  /** Fracción mínima del movimiento de la plantilla (0 = sin compuerta). */
+  minMotionRatio?: number;
 }
 
 /** Ventana por defecto cuando la seña no trae duración de origen. */
@@ -67,7 +77,7 @@ export class SessionValidator {
   private matchStreak = 0;
   private wrongStreak = 0;
   private wrongSignId: string | null = null;
-  private buffer: { vector: number[]; timestampMs: number }[] = [];
+  private buffer: { vector: number[]; timestampMs: number; wrist: WristSample }[] = [];
   private lastDynamicCheckMs = -Infinity;
   private done = false;
 
@@ -87,6 +97,8 @@ export class SessionValidator {
       checkIntervalMs: options.checkIntervalMs ?? 400,
       staticThreshold: options.staticThreshold ?? STATIC_THRESHOLD,
       dynamicThreshold: options.dynamicThreshold ?? DYNAMIC_THRESHOLD,
+      motionWeight: options.motionWeight ?? MOTION_WEIGHT,
+      minMotionRatio: options.minMotionRatio ?? MIN_MOTION_RATIO,
     };
   }
 
@@ -120,7 +132,11 @@ export class SessionValidator {
     const vector = toFeatureVector(frame.landmarks, frame.handedness, frame.aspect);
     return this.signType === 'static'
       ? this.feedStatic(vector)
-      : this.feedDynamic(vector, frame.timestampMs);
+      : this.feedDynamic(
+          vector,
+          frame.timestampMs,
+          wristSample(frame.landmarks, frame.handedness, frame.aspect),
+        );
   }
 
   private feedStatic(vector: number[]): SessionVerdict {
@@ -158,8 +174,8 @@ export class SessionValidator {
     return { status: 'tracking', best };
   }
 
-  private feedDynamic(vector: number[], timestampMs: number): SessionVerdict {
-    this.buffer.push({ vector, timestampMs });
+  private feedDynamic(vector: number[], timestampMs: number, wrist: WristSample): SessionVerdict {
+    this.buffer.push({ vector, timestampMs, wrist });
     const cutoff = timestampMs - this.opts.windowMs;
     while (this.buffer.length > 0 && this.buffer[0]!.timestampMs < cutoff) {
       this.buffer.shift();
@@ -177,6 +193,11 @@ export class SessionValidator {
     const ranked = classifyDynamic(
       this.buffer.map((f) => f.vector),
       templates,
+      {
+        motion: motionTrajectory(this.buffer.map((f) => f.wrist)),
+        motionWeight: this.opts.motionWeight,
+        minMotionRatio: this.opts.minMotionRatio,
+      },
     );
     const best = ranked[0] ?? null;
 

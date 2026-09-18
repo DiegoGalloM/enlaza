@@ -3,7 +3,9 @@ import { Link, useSearchParams } from 'react-router';
 import {
   buildDynamicTemplate,
   buildStaticTemplate,
+  motionTrajectory,
   toFeatureVector,
+  wristSample,
 } from '@enlaza/cv-model';
 import type { HandFrame, SignTemplate } from '@enlaza/cv-model';
 import { Button } from '../components/Button';
@@ -154,7 +156,14 @@ export function Calibration() {
         return;
       }
       const vectors = frames.map((f) => toFeatureVector(f.landmarks, f.handedness, f.aspect));
-      setTemplates(upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors)));
+      // Con la trayectoria de la muñeca, para que la seña no se valide con la
+      // mano quieta (D36).
+      const motion = motionTrajectory(
+        frames.map((f) => wristSample(f.landmarks, f.handedness, f.aspect)),
+      );
+      setTemplates(
+        upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors, undefined, motion)),
+      );
       setMessage(`Plantilla dinámica de "${selectedSign.gloss}" guardada (${frames.length} cuadros).`);
     }, DYNAMIC_CAPTURE_MS);
   }

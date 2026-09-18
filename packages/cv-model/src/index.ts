@@ -5,3 +5,4 @@ export * from './dynamicClassifier';
 export * from './session';
 export * from './quality';
 export * from './migrate';
+export * from './motion';

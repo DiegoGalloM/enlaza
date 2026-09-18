@@ -25,9 +25,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector, videoAspect } from './common.mjs';
+import { chooseHand, frameVector, frameWrist, videoAspect } from './common.mjs';
 import { buildAlphabet } from './build-alphabet.mjs';
-import { buildDynamicTemplate, FEATURE_VERSION } from '../../packages/cv-model/src/index.ts';
+import {
+  buildDynamicTemplate,
+  FEATURE_VERSION,
+  motionTrajectory,
+} from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
 
 const OUT_FILE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
@@ -67,7 +71,10 @@ async function buildCourtesy(extractor, wanted) {
     // Duración de la seña tal como se capturó: la ventana de práctica se
     // dimensiona con ella (ver defaultWindowMs en cv-model).
     const sourceMs = Math.round((withHand[withHand.length - 1].t - withHand[0].t) * 1000);
-    templates.push(buildDynamicTemplate(signId, vectors, sourceMs));
+    // Trayectoria de la muñeca: sin ella, una seña de forma casi constante
+    // (Por favor) se validaba con la mano quieta (D35, D36).
+    const motion = motionTrajectory(withHand.map((f) => frameWrist(f, side, videoAspect(result))));
+    templates.push(buildDynamicTemplate(signId, vectors, sourceMs, motion));
     console.log(
       `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ` +
         `${vectors.length} frames, ${(sourceMs / 1000).toFixed(1)}s)`,

@@ -229,6 +229,42 @@ Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Bueno
 
 **Resultado de Por favor con el detector de la app** (`diagnose-practice.mjs`): valida en todos los escenarios, con 0.62–0.66 en cámara 16:9 y 0.66–0.69 en 4:3. Hola sigue validando y ninguna de las dos plantillas da falsos positivos contra las otras 9 señas (`verify-template.mjs`).
 
+**Estado:** opción 1 implementada en D36 (el puño quieto ya no valida). La opción 2 sigue pendiente: hacer círculos con el puño en cualquier lugar, no solo en el pecho, todavía valida.
+
+### D36. Movimiento de la muñeca en señas dinámicas: compuerta de cantidad + término DTW leve
+**Qué:** cada frame aporta, además de la forma de la mano, la posición de la muñeca en la imagen (`motion.ts`), normalizada así:
+- x escalada por la proporción y espejada en manos izquierdas, como la forma;
+- en largos de mano (mediana de la ventana);
+- suavizada con un promedio móvil de 5 frames;
+- remuestreada a 16 y centrada.
+
+Las plantillas dinámicas guardan esa trayectoria (`motion`) y se usa de dos formas:
+1. **Compuerta** (`MIN_MOTION_RATIO = 0.4`): si la plantilla se mueve y la captura se mueve menos del 40% de eso (distancia RMS al centro), el puntaje se escala hacia abajo en proporción.
+2. **Término DTW** (`MOTION_WEIGHT = 0.5`): el costo de cada par de frames es raíz(forma² + (0.5 · movimiento)²).
+
+**Por qué así, y no solo con DTW:** fue lo primero que se probó, midiendo con `tools/content/tune-motion.mjs` (nuevo):
+- Con pesos DTW de 0.5 a 4, **la mano quieta seguía validando** Por favor (0.76 → 0.65). Sus círculos miden 0.22 largos de mano (RMS), así que un puño quieto queda "cerca" de ellos en cada frame.
+- Con peso 3–4 la seña real empezaba a fallar a 1.25×.
+- La compuerta, en cambio, lleva la mano quieta a 0 y deja la seña real igual con cualquier fracción entre 0.3 y 0.5.
+
+**Por qué el suavizado:** el temblor real del detector con la mano quieta, medido en los videos, es de ~0.005 del alto de imagen por frame (RMS 0.04–0.075 largos de mano). Es comparable a los círculos pequeños, y con temblor simulado de ese orden la mano quieta volvía a validar. El promedio de 5 frames lo reduce ~√5 sin tocar los círculos (~1.5 Hz).
+
+**Resultado medido** (misma señante; temblor simulado 0.003, equivalente al real; sin falsos positivos contra las otras señas):
+
+| Seña | Seña real, 16:9 y 4:3, 0.8×–1.25× | Mano quieta, antes | Mano quieta, ahora |
+|---|---|---|---|
+| Por favor | 0.61–0.65 | valida (0.75) | no valida (0.26) |
+| Hola | 0.66–0.73 | no validaba (0.56) | no valida |
+
+Con temblor de 0.005 (más que el real) la mano quieta tampoco valida. Con 0.008 (3× el real) sí vuelve a validar.
+
+**Compatibilidad:** las plantillas sin `motion` (grabadas en `/plantillas` antes de esto) se comparan solo por forma, como antes. No cambia `FEATURE_VERSION` porque los vectores de forma son los mismos. Las grabaciones nuevas en `/plantillas` ya guardan la trayectoria.
+
+**Límites:**
+- No sabe dónde está la mano respecto al cuerpo (D35, opción 2).
+- Una seña real con movimiento muy pequeño respecto a la plantilla (círculos de menos del 40%) se rechaza. La prueba unitaria fija ese comportamiento.
+- Los parámetros salen de dos señas de una sola señante: hay que recalibrar con `tune-motion.mjs` al agregar señas y al probar con personas.
+
 ---
 
 ## Un párrafo de síntesis

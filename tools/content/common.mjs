@@ -1,4 +1,4 @@
-import { toFeatureVector } from '../../packages/cv-model/src/index.ts';
+import { toFeatureVector, wristSample } from '../../packages/cv-model/src/index.ts';
 
 /**
  * Elige la mano activa de la seña: la que más recorre en imagen (con la
@@ -42,6 +42,20 @@ export function chooseHand(frames) {
  */
 export function appHandedness(side) {
   return side === 'right' ? 'Right' : 'Left';
+}
+
+/**
+ * Posición de muñeca y largo de mano de un frame extraído, con la misma
+ * etiqueta y proporción que la app (ver motion.ts en cv-model).
+ */
+export function frameWrist(frame, side, aspect) {
+  const lm = frame[`${side}Hand`];
+  if (!lm) return null;
+  return wristSample(
+    lm.map(([x, y, z]) => ({ x, y, z })),
+    appHandedness(side),
+    aspect,
+  );
 }
 
 /** Proporción (ancho/alto) del video del que salió una extracción. */
