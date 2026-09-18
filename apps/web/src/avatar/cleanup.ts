@@ -63,6 +63,8 @@ export const DEFAULT_CLEANUP: CleanupOptions = {
 export interface CleanClip {
   fps: number;
   frameCount: number;
+  /** Primer frame del regreso al inicio (cierre del bucle), después de la seña. */
+  returnStartFrame: number;
   tracks: Map<string, THREE.Quaternion[]>;
 }
 
@@ -252,5 +254,10 @@ export function cleanAnimation(
     for (let k = 0; k < holdFrames; k++) clip.push(clip[0].clone());
     tracks.set(bone, clip);
   }
-  return { fps, frameCount: last - first + 1 + returnFrames + holdFrames, tracks };
+  return {
+    fps,
+    frameCount: last - first + 1 + returnFrames + holdFrames,
+    returnStartFrame: last - first + 1,
+    tracks,
+  };
 }

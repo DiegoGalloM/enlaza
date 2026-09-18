@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { cleanAnimation, DEFAULT_CLEANUP, type RawTrack } from './cleanup';
 import { forwardPushOut, type AvatarRig } from './rig';
+import { blinkWeight, createSignFace, type FaceExpression } from './face';
 
 /**
  * Retargeting de landmarks de MediaPipe Holistic a un humanoide VRM.
@@ -590,6 +591,8 @@ export interface SignPlayerOptions {
    * parte de la seña. Sin tramo, se recorta la quietud automáticamente.
    */
   window?: [number, number];
+  /** Expresión de la cara durante la seña (ver face.ts). */
+  face?: FaceExpression;
 }
 
 /**
@@ -649,11 +652,16 @@ export function createSignPlayer(
     if (node) nodes.set(bone, node);
   }
 
+  const face = createSignFace(vrm, options.face);
   const duration = clip.frameCount / clip.fps;
+  const returnStart = clip.returnStartFrame / clip.fps;
   return {
     duration,
     update(elapsedSeconds: number, weight = 1) {
-      const exact = (((elapsedSeconds % duration) + duration) % duration) * clip.fps;
+      const t = ((elapsedSeconds % duration) + duration) % duration;
+      const cycle = Math.floor(elapsedSeconds / duration);
+      face.apply(weight, weight < 1 ? 0 : blinkWeight(t, cycle, returnStart, duration));
+      const exact = t * clip.fps;
       const i = Math.floor(exact) % clip.frameCount;
       // El último frame es la pose inicial (cierre del bucle): envolver a 0 es continuo.
       const next = (i + 1) % clip.frameCount;

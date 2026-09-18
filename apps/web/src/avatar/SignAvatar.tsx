@@ -110,7 +110,10 @@ export function SignAvatar({
         scene = created;
         scene.resize(canvas.clientWidth, canvas.clientHeight);
         observer.observe(canvas);
-        const player = createSignPlayer(scene.vrm, scene.rig, landmarks, { window: animation.window });
+        const player = createSignPlayer(scene.vrm, scene.rig, landmarks, {
+          window: animation.window,
+          face: animation.face,
+        });
         canvas.dataset.duration = player.duration.toFixed(3);
         // Gancho de revisión en desarrollo (como __enlazaFakeDetector): permite
         // muestrear la animación desde tools/avatar sin depender del reloj.

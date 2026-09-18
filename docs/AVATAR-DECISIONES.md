@@ -171,7 +171,7 @@ La prueba unitaria de continuidad del bucle falla si se vuelve al slerp directo 
 ## Pendiente
 
 1. **Validación con ICAL** del tramo elegido (A17) y de la configuración manual. La imagen de arriba sirve para esa revisión.
-2. **Expresión facial:** no se transfiere (PDF, fase posterior).
+2. **Expresión facial:** no se transfiere (PDF, fase posterior). *Resuelto en A27.*
 3. **Mano con mano:** no hay colisión entre las dos manos. Hola no la necesita; señas donde las manos se tocan sí.
 
 ---
@@ -188,7 +188,7 @@ Es el proceso seguido con Por favor. Hay que cambiar el slug, el `signId` y los 
 
 1. **Ver la seña:** `node tools/avatar/video-sheet.mjs content/ical-2026-09/<slug>.mp4 hoja.png --cada=0.1`. Para acercar la mano: `--recorte=x,y,w,h --desde --hasta --ancho`. Decidir el tramo que es la seña (sin preparación ni regreso a reposo) y anotar qué se ve: mano dominante, configuración, contacto, movimiento, gestos no manuales.
 2. **Extraer landmarks:** `node tools/avatar/extract-landmarks.mjs content/ical-2026-09/<slug>.mp4 apps/web/public/avatar/<slug>.landmarks.json` (~2 min). Revisar en qué frames se detectó cada mano.
-3. **Registrar la seña** en `apps/web/src/avatar/animations.ts`, con `gloss`, `url` y `window`, y un comentario de por qué ese tramo. Con eso la lección ya muestra el avatar.
+3. **Registrar la seña** en `apps/web/src/avatar/animations.ts`, con `gloss`, `url`, `window` y `face` (gestos no manuales, A27), y un comentario de por qué ese tramo y esa cara. Con eso la lección ya muestra el avatar.
 4. **Revisar el avatar** en `/avatar-poc?sena=<signId>`:
    - `&t=` congela la seña en un instante;
    - `&angulo=70` la muestra de lado (contactos con el cuerpo);
@@ -204,7 +204,7 @@ Es el proceso seguido con Por favor. Hay que cambiar el slug, el `signId` y los 
 ## A20. Tramo de Por favor: solo el contacto (0.37–2.06 s)
 **Qué:** puño derecho apoyado en el lado izquierdo del pecho, con círculos pequeños. Antes de 0.37 s la mano sube desde el reposo; después de 2.06 s se retira y las manos se entrelazan.
 **Por qué:** si el tramo es solo el contacto, el cierre del bucle (A18) va de círculo a círculo sin despegar la mano del pecho. Si incluyera la subida, cada repetición despegaría la mano y volvería a subir, algo que no es parte de la seña.
-**No transferido:** la cabeza inclinada sí pasa al avatar (retargeting de cabeza), pero el gesto de súplica de la cara no. Es parte de la seña y queda como pendiente.
+**No transferido:** la cabeza inclinada sí pasa al avatar (retargeting de cabeza), pero el gesto de súplica de la cara no. Es parte de la seña y queda como pendiente. *Resuelto en A27.*
 
 ## A21. El rig se mide completo al cargar, no a demanda
 **Qué:** `measureRig` lee de una vez, con el modelo en reposo, la posición de todos los huesos humanoides y de los nodos `_end`.
@@ -251,3 +251,36 @@ El giro que queda es continuo (≤ 6° por frame) y el video también muestra ro
 - **Suavidad** (`measure-smoothness`): Por favor tiene un ciclo de 2.08 s; brazo 70, antebrazo 42 y dedos ≤ 142 rad/s². Hola no cambió respecto a A18.
 - **e2e:** no se pudo correr porque el puerto 3001 ya estaba ocupado. Esta iteración no toca el flujo que cubre.
 - **Pendiente nuevo:** la limitación del reconocimiento que expone Por favor, en D35 de DECISIONES-TECNICAS.md.
+
+---
+
+# Cuarta iteración: gestos no manuales (2026-09-18)
+
+La cara de súplica de Por favor es parte de la seña (A20) y el avatar la hacía con cara neutra. Hola, que se hace sonriendo, tampoco tenía expresión.
+
+![Cara en el video, en el avatar antes y en el avatar ahora (Por favor a 1.17 s, Hola a 0.8 s)](img/avatar-caras.png)
+
+## A27. Expresión de la cara registrada por seña, no extraída del video
+**Qué:** `animations.ts` registra por seña una expresión (`face`) como pesos de los morphs de cara del modelo VRoid (`Fcl_BRW_*`, `Fcl_EYE_*`, `Fcl_MTH_*`). `face.ts` la registra como una expresión VRM propia y el reproductor la aplica con el mismo peso de mezcla que los huesos, así que entra gradual al cargar (A24).
+- **Por favor:** cejas levantadas por dentro y juntas (`BRW_Sorrow` 0.8 + `BRW_Angry` 0.3), ojos entrecerrados (`EYE_Sorrow` 0.6), labios apretados en puchero (`MTH_Angry` 0.6 + `MTH_Small` 0.4).
+- **Hola:** sonrisa abierta (`MTH_Joy` 0.5, `EYE_Joy` 0.35, `BRW_Joy` 0.5).
+
+**Por qué no se extrae:** fue lo primero que se probó. Holistic entrega los 52 coeficientes de ARKit (`outputFaceBlendshapes`). En el video de Por favor, medidos:
+- `mouthSmile` ≈ 0.6 durante el puchero, cuando la sonrisa real de después del tramo da 0.9. Transferido, el avatar sonreía mientras suplicaba.
+- El puchero no aparece: `mouthPucker` ≤ 0.09, `mouthFrown` 0.
+- El ceño apenas: `browInnerUp` 0.05–0.19, `browDown` < 0.1.
+
+La cabeza inclinada y los lentes probablemente confunden al modelo. Con una sola señante no hay cómo calibrarlo, y una expresión equivocada es peor que ninguna. Qué cara lleva la seña es, además, una decisión lingüística como el tramo (A17): se registra explícita, con un comentario de qué se ve en el video, y se revisa con ICAL.
+
+**Por qué morphs y no las expresiones del modelo:** las del modelo (`sad`, `happy`…) son de cara completa (`Fcl_ALL_*`). No permiten, por ejemplo, cejas de tristeza con boca apretada, que es la súplica. Los pesos se eligieron comparando capturas de la cara del avatar con la hoja del video (`video-sheet.mjs --recorte`).
+
+**Descartado:** mapear los coeficientes a morphs restando la cara neutra de la persona. En este video no hay un tramo neutro fiable (antes de la seña ya empieza el gesto) y el problema de fondo es que el puchero no se detecta.
+
+## A28. Parpadeo en el cierre del bucle
+**Qué:** cada dos ciclos (~4 s) el avatar parpadea (cierre de 60 ms, apertura de 100 ms) en medio del regreso al inicio, nunca durante la seña. Sobre ojos ya entrecerrados el parpadeo se reduce (0.3 × el peso de los morphs de ojos) para que el párpado no se pase.
+**Por qué:** sin parpadeo la cara se ve congelada, más ahora que tiene expresión. Se pone en el límite entre repeticiones porque es donde parpadea una persona señante; a mitad de la seña se podría leer como parte de ella. Es determinista (depende del ciclo, no de un reloj al azar), así que las capturas con `?t=` siguen siendo reproducibles: el ciclo 0 nunca parpadea.
+**Verificado:** con Por favor la reducción inicial de 0.6 dejaba ver una rendija en el parpadeo; con 0.3 cierra limpio en ambas señas.
+
+## Verificación de la cuarta iteración
+- **Pruebas:** `avatar-face.test.ts` (parpadeo solo en el regreso, cierre completo, ciclos alternos; `returnStartFrame` del clip).
+- **Receta:** el paso 1 de la receta ya pide anotar los gestos no manuales; ahora se registran en `face` (paso 3).
