@@ -23,6 +23,7 @@ import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
+import { faceFromBox } from './common.mjs';
 
 const args = process.argv.slice(2);
 const signId = args.find((a) => !a.startsWith('--')) ?? 'lsc-cortesia-5';
@@ -55,6 +56,7 @@ function timeline(result, { speed = 1, cut = Infinity, repeat = 1, gapMs = 800 }
         lm: f.landmarks,
         hand: f.handedness,
         aspect: result.cropW / result.height,
+        face: faceFromBox(f.face),
       });
     }
     const end = offset + (part[part.length - 1].t * 1000) / speed;
@@ -71,7 +73,7 @@ function replay(events) {
   let validatedAt = null;
   for (const e of events) {
     const verdict = e.lm
-      ? validator.feed({ landmarks: e.lm, handedness: e.hand, timestampMs: e.tMs, aspect: e.aspect })
+      ? validator.feed({ landmarks: e.lm, handedness: e.hand, timestampMs: e.tMs, aspect: e.aspect, face: e.face })
       : validator.feedEmpty();
     if (verdict.best?.signId === signId) best = Math.max(best, verdict.best.score);
     if (verdict.status === 'correct' && validatedAt === null) validatedAt = e.tMs;
@@ -99,10 +101,12 @@ try {
     '4:3 (webcam típica)': await handFrames(extractor, 4 / 3),
   };
   const detected = cameras['16:9 (como el video)'].frames;
+  const withFace = detected.filter((f) => f.face).length;
   console.log(
     `${signId}: plantilla dinámica, ventana ${template.sourceMs} ms, umbral 0.60\n` +
       `HandLandmarker detectó mano en ${detected.filter((f) => f.landmarks).length}/${detected.length} frames; ` +
-      `etiquetas: ${[...new Set(detected.map((f) => f.handedness).filter(Boolean))].join(', ')}\n`,
+      `etiquetas: ${[...new Set(detected.map((f) => f.handedness).filter(Boolean))].join(', ')}; ` +
+      `cara en ${withFace}/${detected.length}\n`,
   );
   const scenarios = [
     ['video completo, 1×', {}],

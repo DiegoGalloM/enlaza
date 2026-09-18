@@ -198,7 +198,7 @@ Es el proceso seguido con Por favor. Hay que cambiar el slug, el `signId` y los 
 6. **Verificar:**
    - `npx vite-node tools/content/verify-template.mjs <signId>`: su video a varias velocidades, sin falsos positivos contra las otras 9.
    - `npx vite-node tools/content/diagnose-practice.mjs <signId>`: detector real de la app, cámaras 16:9 y 4:3. Hay que registrar el video en su mapa `VIDEOS`.
-   - `JITTER=0.003 npx vite-node tools/content/tune-motion.mjs 0.5:0.4`: que la mano quieta no valide la seña y la real sí, sin falsos positivos (D36). Si la seña nueva rompe algo, comparar otras combinaciones de peso y fracción.
+   - `JITTER=0.003 npx vite-node tools/content/tune-motion.mjs 0.5:0.4:0.6`: que la mano quieta y la seña hecha en otro lugar no validen, que la real sí, y sin falsos positivos (D36, D37). Si la seña nueva rompe algo, comparar otras combinaciones de peso, fracción y tolerancia.
 7. **Probar con la cámara** en la lección, y **documentar** aquí lo que la seña haya enseñado.
 
 ## A20. Tramo de Por favor: solo el contacto (0.37–2.06 s)

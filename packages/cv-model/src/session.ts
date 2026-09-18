@@ -2,11 +2,13 @@ import { toFeatureVector } from './normalize';
 import { STATIC_THRESHOLD, classifyStatic } from './staticClassifier';
 import {
   DYNAMIC_THRESHOLD,
+  LOCATION_TOLERANCE,
   MIN_MOTION_RATIO,
   MOTION_WEIGHT,
   classifyDynamic,
 } from './dynamicClassifier';
 import { motionTrajectory, wristSample, type WristSample } from './motion';
+import { locationSample, locationTrajectory } from './location';
 import type {
   ClassifyResult,
   DynamicTemplate,
@@ -42,6 +44,8 @@ export interface SessionOptions {
   motionWeight?: number;
   /** Fracción mínima del movimiento de la plantilla (0 = sin compuerta). */
   minMotionRatio?: number;
+  /** Tolerancia de lugar en altos de cara (Infinity = sin compuerta de lugar, D37). */
+  locationTolerance?: number;
 }
 
 /** Ventana por defecto cuando la seña no trae duración de origen. */
@@ -77,7 +81,12 @@ export class SessionValidator {
   private matchStreak = 0;
   private wrongStreak = 0;
   private wrongSignId: string | null = null;
-  private buffer: { vector: number[]; timestampMs: number; wrist: WristSample }[] = [];
+  private buffer: {
+    vector: number[];
+    timestampMs: number;
+    wrist: WristSample;
+    location: [number, number] | null;
+  }[] = [];
   private lastDynamicCheckMs = -Infinity;
   private done = false;
 
@@ -99,6 +108,7 @@ export class SessionValidator {
       dynamicThreshold: options.dynamicThreshold ?? DYNAMIC_THRESHOLD,
       motionWeight: options.motionWeight ?? MOTION_WEIGHT,
       minMotionRatio: options.minMotionRatio ?? MIN_MOTION_RATIO,
+      locationTolerance: options.locationTolerance ?? LOCATION_TOLERANCE,
     };
   }
 
@@ -136,6 +146,7 @@ export class SessionValidator {
           vector,
           frame.timestampMs,
           wristSample(frame.landmarks, frame.handedness, frame.aspect),
+          locationSample(frame.landmarks, frame.handedness, frame.aspect, frame.face),
         );
   }
 
@@ -174,8 +185,13 @@ export class SessionValidator {
     return { status: 'tracking', best };
   }
 
-  private feedDynamic(vector: number[], timestampMs: number, wrist: WristSample): SessionVerdict {
-    this.buffer.push({ vector, timestampMs, wrist });
+  private feedDynamic(
+    vector: number[],
+    timestampMs: number,
+    wrist: WristSample,
+    location: [number, number] | null,
+  ): SessionVerdict {
+    this.buffer.push({ vector, timestampMs, wrist, location });
     const cutoff = timestampMs - this.opts.windowMs;
     while (this.buffer.length > 0 && this.buffer[0]!.timestampMs < cutoff) {
       this.buffer.shift();
@@ -197,6 +213,8 @@ export class SessionValidator {
         motion: motionTrajectory(this.buffer.map((f) => f.wrist)),
         motionWeight: this.opts.motionWeight,
         minMotionRatio: this.opts.minMotionRatio,
+        location: locationTrajectory(this.buffer.map((f) => f.location)),
+        locationTolerance: this.opts.locationTolerance,
       },
     );
     const best = ranked[0] ?? null;

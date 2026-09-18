@@ -1,4 +1,4 @@
-import { toFeatureVector, wristSample } from '../../packages/cv-model/src/index.ts';
+import { locationSample, toFeatureVector, wristSample } from '../../packages/cv-model/src/index.ts';
 
 /**
  * Elige la mano activa de la seña: la que más recorre en imagen (con la
@@ -55,6 +55,26 @@ export function frameWrist(frame, side, aspect) {
     lm.map(([x, y, z]) => ({ x, y, z })),
     appHandedness(side),
     aspect,
+  );
+}
+
+/**
+ * Caja de la cara de un frame extraído ([centro x, centro y, ancho, alto],
+ * ver extract-page.html) en el formato de HandFrame.face, o undefined.
+ */
+export function faceFromBox(box) {
+  return box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : undefined;
+}
+
+/** Lugar de la mano respecto a la cara en un frame extraído (location.ts en cv-model). */
+export function frameLocation(frame, side, aspect) {
+  const lm = frame[`${side}Hand`];
+  if (!lm) return null;
+  return locationSample(
+    lm.map(([x, y, z]) => ({ x, y, z })),
+    appHandedness(side),
+    aspect,
+    faceFromBox(frame.face),
   );
 }
 

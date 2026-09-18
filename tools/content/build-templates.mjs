@@ -25,11 +25,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector, frameWrist, videoAspect } from './common.mjs';
+import { chooseHand, frameLocation, frameVector, frameWrist, videoAspect } from './common.mjs';
 import { buildAlphabet } from './build-alphabet.mjs';
 import {
   buildDynamicTemplate,
   FEATURE_VERSION,
+  locationTrajectory,
   motionTrajectory,
 } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
@@ -74,10 +75,16 @@ async function buildCourtesy(extractor, wanted) {
     // Trayectoria de la muñeca: sin ella, una seña de forma casi constante
     // (Por favor) se validaba con la mano quieta (D35, D36).
     const motion = motionTrajectory(withHand.map((f) => frameWrist(f, side, videoAspect(result))));
-    templates.push(buildDynamicTemplate(signId, vectors, sourceMs, motion));
+    // Lugar de la mano respecto a la cara: sin él, Por favor validaba con los
+    // círculos hechos en cualquier parte, no solo en el pecho (D37).
+    const location = locationTrajectory(
+      withHand.map((f) => frameLocation(f, side, videoAspect(result))),
+    );
+    templates.push(buildDynamicTemplate(signId, vectors, sourceMs, motion, location));
     console.log(
       `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ` +
-        `${vectors.length} frames, ${(sourceMs / 1000).toFixed(1)}s)`,
+        `${vectors.length} frames, ${(sourceMs / 1000).toFixed(1)}s` +
+        `${location ? '' : ', SIN LUGAR: no se detectó la cara'})`,
     );
   }
   return templates;

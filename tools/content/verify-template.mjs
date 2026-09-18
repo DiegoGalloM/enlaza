@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { appHandedness, chooseHand, videoAspect } from './common.mjs';
+import { appHandedness, chooseHand, videoAspect, faceFromBox } from './common.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 
 const BUNDLE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
@@ -78,6 +78,7 @@ function replay(result, speed) {
     const verdict = validator.feed({
       landmarks: lm.map(([x, y, z]) => ({ x, y, z })),
       handedness: appHandedness(side),
+      face: faceFromBox(frame.face),
       aspect: videoAspect(result),
       timestampMs: (frame.t * 1000) / speed,
     });

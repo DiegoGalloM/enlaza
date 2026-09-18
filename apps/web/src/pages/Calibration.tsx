@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router';
 import {
   buildDynamicTemplate,
   buildStaticTemplate,
+  locationSample,
+  locationTrajectory,
   motionTrajectory,
   toFeatureVector,
   wristSample,
@@ -161,8 +163,13 @@ export function Calibration() {
       const motion = motionTrajectory(
         frames.map((f) => wristSample(f.landmarks, f.handedness, f.aspect)),
       );
+      // Y el lugar de la mano respecto a la cara, para que no valide hecha en
+      // otra parte del cuerpo (D37). Sin cara en la grabación queda sin lugar.
+      const location = locationTrajectory(
+        frames.map((f) => locationSample(f.landmarks, f.handedness, f.aspect, f.face)),
+      );
       setTemplates(
-        upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors, undefined, motion)),
+        upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors, undefined, motion, location)),
       );
       setMessage(`Plantilla dinámica de "${selectedSign.gloss}" guardada (${frames.length} cuadros).`);
     }, DYNAMIC_CAPTURE_MS);

@@ -12,6 +12,18 @@ export const WRIST = 0;
 export const MIDDLE_MCP = 9;
 export const LANDMARK_COUNT = 21;
 
+/**
+ * Caja de la cara en la imagen (centro y tamaño, en coordenadas normalizadas
+ * como los landmarks). Solo sirve de referencia para el lugar de la mano
+ * (location.ts); no se analiza la expresión.
+ */
+export interface FaceBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** A single captured frame of one hand. */
 export interface HandFrame {
   landmarks: Landmark[];
@@ -23,6 +35,8 @@ export interface HandFrame {
    * Obligatoria: sin ella las features dependen de la cámara (ver toFeatureVector).
    */
   aspect: number;
+  /** Cara detectada en el mismo frame, si la hay (lugar de la seña, D37). */
+  face?: FaceBox;
 }
 
 /**
@@ -58,6 +72,12 @@ export interface DynamicTemplate {
    * solo por forma.
    */
   motion?: number[][];
+  /**
+   * Lugar de la mano respecto a la cara (SEQUENCE_LENGTH × [x, y], en altos
+   * de cara, sin centrar; ver location.ts). Opcional: plantillas sin lugar no
+   * lo exigen.
+   */
+  location?: number[][];
 }
 
 export type SignTemplate = StaticTemplate | DynamicTemplate;

@@ -19,9 +19,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector, frameWrist, videoAspect } from './common.mjs';
+import { chooseHand, frameLocation, frameVector, frameWrist, videoAspect } from './common.mjs';
 import {
   buildDynamicTemplate,
+  locationTrajectory,
   motionTrajectory,
   buildStaticTemplate,
   euclideanDistance,
@@ -201,6 +202,7 @@ export async function buildAlphabet(extractor) {
             vectors,
             sourceMs,
             motionTrajectory(withHand.map((f) => frameWrist(f, side, videoAspect(result)))),
+            locationTrajectory(withHand.map((f) => frameLocation(f, side, videoAspect(result)))),
           )
         : buildStaticTemplate(signId, stillestWindow(vectors, STATIC_WINDOW)),
     );

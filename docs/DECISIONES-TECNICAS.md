@@ -229,7 +229,7 @@ Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Bueno
 
 **Resultado de Por favor con el detector de la app** (`diagnose-practice.mjs`): valida en todos los escenarios, con 0.62–0.66 en cámara 16:9 y 0.66–0.69 en 4:3. Hola sigue validando y ninguna de las dos plantillas da falsos positivos contra las otras 9 señas (`verify-template.mjs`).
 
-**Estado:** opción 1 implementada en D36 (el puño quieto ya no valida). La opción 2 sigue pendiente: hacer círculos con el puño en cualquier lugar, no solo en el pecho, todavía valida.
+**Estado:** opción 1 implementada en D36 (el puño quieto ya no valida). Opción 2 implementada en D37 con la cara como referencia, en lugar de la pose completa: los círculos fuera del pecho ya no validan.
 
 ### D36. Movimiento de la muñeca en señas dinámicas: compuerta de cantidad + término DTW leve
 **Qué:** cada frame aporta, además de la forma de la mano, la posición de la muñeca en la imagen (`motion.ts`), normalizada así:
@@ -264,6 +264,45 @@ Con temblor de 0.005 (más que el real) la mano quieta tampoco valida. Con 0.008
 - No sabe dónde está la mano respecto al cuerpo (D35, opción 2).
 - Una seña real con movimiento muy pequeño respecto a la plantilla (círculos de menos del 40%) se rechaza. La prueba unitaria fija ese comportamiento.
 - Los parámetros salen de dos señas de una sola señante: hay que recalibrar con `tune-motion.mjs` al agregar señas y al probar con personas.
+
+### D37. Lugar de la seña: la mano respecto a la caja de la cara
+**Qué:** la práctica corre, además de HandLandmarker, el detector de caras de MediaPipe (BlazeFace de corto alcance, ~230 KB). Cada frame trae la caja de la cara (`HandFrame.face`), y `location.ts` mide el centro de la mano (entre muñeca y nudillo medio) relativo al centro de la cara:
+- en altos de cara, así no depende de la distancia a la cámara;
+- x escalada por la proporción y espejada en manos izquierdas, igual que la forma y el movimiento.
+
+Las plantillas dinámicas guardan esa trayectoria (`location`, 16 × [x, y], sin centrar). Al comparar, DTW ahora devuelve también el camino de alineación (`dtwAlign`). Sobre esos pares de frames se promedia el error de lugar, y una **compuerta** baja el puntaje:
+- sin cambio hasta `LOCATION_TOLERANCE = 0.6` altos de cara;
+- en línea recta hasta 0 en 1.2.
+
+**Por qué la cara y no la pose del cuerpo (opción 2 de D35):**
+- **Decisión del equipo (2026-09-18):** se relaja la restricción del encargo ("solo manos") únicamente para usar la cara como punto de referencia. No se analiza la expresión, así que no es reconocimiento de gramática no manual.
+- **Costo:** BlazeFace cuesta ~1–2 ms por frame frente a ~10–20 ms de PoseLandmarker. De frente a una webcam, la cara es lo más estable que se ve.
+- **Escala:** el alto de la cara sirve de unidad de medida sin supuestos sobre proporciones del cuerpo.
+
+**Por qué compuerta y no término DTW:** con el movimiento (D36) se vio que un término DTW débil no alcanza a rechazar. Además, el lugar se compara sobre la alineación que ya dio la forma, así que no deforma el emparejamiento.
+
+**Resultado medido** (`tune-motion.mjs`, misma señante, temblor 0.003; el lugar desplazado mueve la mano y deja la cara donde está):
+
+| Seña | Seña real 16:9 y 4:3, 0.8×–1.25× | Mano quieta | Arriba 1.2 (cara) | Abajo 1.2 (vientre) | Lado 1.2 | Lado 0.8 | Falsos positivos |
+|---|---|---|---|---|---|---|---|
+| Por favor, antes | 0.63–0.67 | no | valida 0.64 | valida 0.64 | valida 0.64 | valida 0.64 | 0 |
+| Por favor, ahora | 0.63–0.67 | no | no 0.31 | no 0.00 | no 0.07 | no 0.51 | 0 |
+| Hola, ahora | 0.65–0.70 | no | no 0.36 | no 0.00 | no 0.00 | no 0.39 | 0 |
+
+La seña real no pierde puntaje: su error de lugar queda dentro de la tolerancia. Con tolerancia 0.8 o 1.0 los desplazamientos de 0.8–1.2 vuelven a validar; con 0.4 no cambia nada medible, pero deja menos margen a otras personas. Se eligió 0.6.
+
+**Compatibilidad:**
+- Sin cara en la captura (menos de la mitad de los frames con cara), o con una plantilla sin `location` (grabada antes de esto), se compara como antes, por forma y movimiento.
+- Si el detector de caras no carga, la práctica sigue funcionando sin lugar.
+- No cambia `FEATURE_VERSION`: los vectores de forma son los mismos.
+- `/plantillas` ya guarda el lugar.
+
+**Herramientas:** `extract-page.html` y `hand-extract-page.html` guardan la caja de la cara de cada frame con el mismo modelo que la app, así que las plantillas y los diagnósticos se construyen igual que lo que ve la práctica. Los cachés de extracción se regeneraron. `tune-motion.mjs` acepta `peso:fracción:tolerancia` y reporta la seña desplazada.
+
+**Límites:**
+- La tolerancia sale de una sola señante. Personas con otras proporciones (cuello largo, cara pequeña) pueden quedar más lejos del lugar de la plantilla. Hay que medir con personas y recalibrar con `tune-motion.mjs`.
+- No distingue profundidad: una mano frente al pecho, sin tocarlo, cuenta igual que apoyada.
+- Las señas estáticas (abecedario) no usan lugar.
 
 ---
 

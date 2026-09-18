@@ -33,11 +33,30 @@ export const MIN_MOTION_RATIO = 0.4;
 /** Movimiento (RMS, en largos de mano) por debajo del cual se considera ruido del detector. */
 export const MOTION_NOISE_FLOOR = 0.05;
 
+/**
+ * Compuerta de lugar (D37): error medio, en altos de cara, entre el lugar de
+ * la mano en la captura y en la plantilla, sobre los pares de frames que
+ * alinea DTW. Hasta LOCATION_TOLERANCE el puntaje no cambia; de ahí baja en
+ * línea recta hasta 0 en LOCATION_TOLERANCE + LOCATION_FADE. Medido con
+ * tools/content/tune-motion.mjs (lugar desplazado frente a la seña real).
+ */
+export const LOCATION_TOLERANCE = 0.6;
+export const LOCATION_FADE = 0.6;
+
 export interface DynamicMotionOptions {
   /** Trayectoria de la muñeca de la captura (motionTrajectory, sin preparar). */
   motion?: number[][];
   motionWeight?: number;
   minMotionRatio?: number;
+  /** Lugar de la mano respecto a la cara en la captura (locationTrajectory). */
+  location?: number[][];
+  /** Tolerancia de lugar en altos de cara (Infinity = sin compuerta de lugar). */
+  locationTolerance?: number;
+}
+
+/** Factor de la compuerta de lugar para un error medio dado (1 = sin castigo). */
+export function locationFactor(error: number, tolerance = LOCATION_TOLERANCE): number {
+  return Math.min(1, Math.max(0, 1 - (error - tolerance) / LOCATION_FADE));
 }
 
 /** Cantidad de movimiento de una trayectoria preparada: distancia RMS al centro. */
@@ -101,6 +120,21 @@ export function dtwDistance(
   motionB?: number[][],
   motionWeight = MOTION_WEIGHT,
 ): number {
+  return dtwAlign(a, b, motionA, motionB, motionWeight).distance;
+}
+
+/**
+ * DTW con el camino de alineación: pares [i, j] de frames de `a` y `b` que
+ * quedaron emparejados, del inicio al final. El camino sirve para comparar el
+ * lugar de la mano frame a frame ya alineados en tiempo (D37).
+ */
+export function dtwAlign(
+  a: number[][],
+  b: number[][],
+  motionA?: number[][],
+  motionB?: number[][],
+  motionWeight = MOTION_WEIGHT,
+): { distance: number; path: [number, number][] } {
   const withMotion = motionA !== undefined && motionB !== undefined;
   const n = a.length;
   const m = b.length;
@@ -117,8 +151,37 @@ export function dtwDistance(
       cost[i]![j] = d + Math.min(cost[i - 1]![j]!, cost[i]![j - 1]!, cost[i - 1]![j - 1]!);
     }
   }
+  const path: [number, number][] = [];
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    path.push([i - 1, j - 1]);
+    const diagonal = cost[i - 1]![j - 1]!;
+    const up = cost[i - 1]![j]!;
+    const left = cost[i]![j - 1]!;
+    if (diagonal <= up && diagonal <= left) {
+      i--;
+      j--;
+    } else if (up <= left) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  path.reverse();
   // Normalize by path length so longer sequences aren't penalized.
-  return cost[n]![m]! / (n + m);
+  return { distance: cost[n]![m]! / (n + m), path };
+}
+
+/** Error medio de lugar a lo largo de un camino DTW, en altos de cara. */
+export function locationError(
+  path: [number, number][],
+  locationA: number[][],
+  locationB: number[][],
+): number {
+  let sum = 0;
+  for (const [i, j] of path) sum += euclideanDistance(locationA[i]!, locationB[j]!);
+  return path.length > 0 ? sum / path.length : 0;
 }
 
 /** Map a DTW distance to a similarity score in (0, 1]. */
@@ -136,8 +199,19 @@ export function classifyDynamic(
   templates: DynamicTemplate[],
   options: DynamicMotionOptions = {},
 ): ClassifyResult[] {
-  const { motion, motionWeight = MOTION_WEIGHT, minMotionRatio = MIN_MOTION_RATIO } = options;
+  const {
+    motion,
+    motionWeight = MOTION_WEIGHT,
+    minMotionRatio = MIN_MOTION_RATIO,
+    location,
+    locationTolerance = LOCATION_TOLERANCE,
+  } = options;
   const seq = resampleSequence(frames);
+  // Lugar: solo si la captura lo trae (hubo cara) y la plantilla también.
+  const seqLocation =
+    location && location.length > 0 && Number.isFinite(locationTolerance)
+      ? resampleSequence(location)
+      : undefined;
   // El movimiento solo se usa contra plantillas que también lo traen; las
   // demás (p. ej. grabadas en /plantillas antes de D36) se comparan solo por
   // forma, como antes.
@@ -146,9 +220,14 @@ export function classifyDynamic(
   return templates
     .map((t) => {
       const templateMotion = seqMotion ? t.motion : undefined;
-      let score = dtwSimilarity(
-        dtwDistance(seq, t.frames, seqMotion, templateMotion, motionWeight),
-      );
+      const aligned = dtwAlign(seq, t.frames, seqMotion, templateMotion, motionWeight);
+      let score = dtwSimilarity(aligned.distance);
+      if (seqLocation && t.location) {
+        score *= locationFactor(
+          locationError(aligned.path, seqLocation, t.location),
+          locationTolerance,
+        );
+      }
       if (templateMotion) {
         const templateAmount = motionAmount(templateMotion);
         if (templateAmount > MOTION_NOISE_FLOOR && minMotionRatio > 0) {
@@ -165,10 +244,12 @@ export function buildDynamicTemplate(
   frames: number[][],
   sourceMs?: number,
   motion?: number[][],
+  location?: number[][],
 ): DynamicTemplate {
   const template: DynamicTemplate = { signId, type: 'dynamic', frames: resampleSequence(frames) };
   if (sourceMs !== undefined) template.sourceMs = sourceMs;
   if (motion && motion.length > 0) template.motion = prepareMotion(motion);
+  if (location && location.length > 0) template.location = resampleSequence(location);
   return template;
 }
 
