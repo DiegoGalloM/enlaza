@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SessionValidator } from '@enlaza/cv-model';
 import type { ClassifyResult, HandFrame, SignTemplate, SignType } from '@enlaza/cv-model';
-import { createDetector } from './detector';
+import { cameraAspect, createDetector } from './detector';
+import { legacyTemplateIds, mergeTemplates, migrateLegacyTemplates } from './templates';
 
 export type CameraState = 'starting' | 'ready' | 'error';
 export type PracticeStatus = 'waiting' | 'tracking' | 'correct' | 'retry';
@@ -16,6 +17,11 @@ interface PracticeSession {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   /** Confirmed score when status === 'correct'. */
   finalScore: number | null;
+  /**
+   * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
+   * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
+   */
+  retry: () => void;
 }
 
 /** MediaPipe hand skeleton (pairs of landmark indices). */
@@ -68,6 +74,14 @@ export function usePracticeSession(
   const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
+  const validatorRef = useRef<SessionValidator | null>(null);
+
+  const retry = useCallback(() => {
+    validatorRef.current?.reset();
+    setStatus('waiting');
+    setBest(null);
+    setFinalScore(null);
+  }, []);
 
   const onFrame = useCallback(
     (validator: SessionValidator) => (frame: HandFrame | null) => {
@@ -84,9 +98,12 @@ export function usePracticeSession(
 
   useEffect(() => {
     if (!sign) return;
+    const { id: signId, type: signType } = sign;
 
-    const validator = new SessionValidator(sign.id, sign.type, templates);
-    setHasTemplate(validator.hasTemplates());
+    // Mientras abre la cámara: una plantilla v1 pendiente de migrar también cuenta.
+    setHasTemplate(
+      templates.some((t) => t.signId === signId) || legacyTemplateIds().has(signId),
+    );
     setStatus('waiting');
     setBest(null);
     setFinalScore(null);
@@ -113,6 +130,18 @@ export function usePracticeSession(
           video.srcObject = stream;
           await video.play();
         }
+        // Con la cámara abierta ya se conoce su proporción: las plantillas
+        // grabadas antes de corregirla se migran aquí, una sola vez.
+        const aspect = cameraAspect(video, detector);
+        const migrated = aspect ? migrateLegacyTemplates(aspect) : [];
+        if (cancelled) return;
+        const validator = new SessionValidator(
+          signId,
+          signType,
+          migrated.length > 0 ? mergeTemplates(templates, migrated) : templates,
+        );
+        validatorRef.current = validator;
+        setHasTemplate(validator.hasTemplates());
         await detector.start(video, onFrame(validator));
         if (!cancelled) setCameraState('ready');
       } catch (err) {
@@ -131,6 +160,7 @@ export function usePracticeSession(
 
     return () => {
       cancelled = true;
+      validatorRef.current = null;
       detector.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
@@ -139,5 +169,15 @@ export function usePracticeSession(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sign?.id, sign?.type, templates, onFrame]);
 
-  return { cameraState, cameraError, status, best, hasTemplate, videoRef, canvasRef, finalScore };
+  return {
+    cameraState,
+    cameraError,
+    status,
+    best,
+    hasTemplate,
+    videoRef,
+    canvasRef,
+    finalScore,
+    retry,
+  };
 }

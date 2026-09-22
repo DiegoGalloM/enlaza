@@ -3,18 +3,23 @@ import { Link, useSearchParams } from 'react-router';
 import {
   buildDynamicTemplate,
   buildStaticTemplate,
+  locationSample,
+  locationTrajectory,
+  motionTrajectory,
   toFeatureVector,
+  wristSample,
 } from '@enlaza/cv-model';
 import type { HandFrame, SignTemplate } from '@enlaza/cv-model';
 import { Button } from '../components/Button';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
-import { createDetector } from '../cv/detector';
+import { cameraAspect, createDetector } from '../cv/detector';
 import {
   exportTemplates,
   fetchBundledTemplates,
   importTemplates,
   loadTemplates,
+  migrateLegacyTemplates,
   removeTemplate,
   upsertTemplate,
 } from '../cv/templates';
@@ -89,6 +94,12 @@ export function Calibration() {
           video.srcObject = stream;
           await video.play();
         }
+        // Plantillas grabadas antes de la corrección de proporción: se migran
+        // con la proporción de esta cámara, que es la que las grabó.
+        const aspect = cameraAspect(video, detector);
+        if (aspect && migrateLegacyTemplates(aspect).length > 0 && !cancelled) {
+          setTemplates(loadTemplates());
+        }
         await detector.start(video, (frame) => {
           latestFrame.current = frame;
           setHandVisible(frame !== null);
@@ -121,7 +132,7 @@ export function Calibration() {
       setMessage('No vemos ninguna mano en este momento.');
       return;
     }
-    const vector = toFeatureVector(frame.landmarks, frame.handedness);
+    const vector = toFeatureVector(frame.landmarks, frame.handedness, frame.aspect);
     const next = [...samples, vector];
     setSamples(next);
     setMessage(`Muestra ${next.length} capturada.`);
@@ -146,8 +157,20 @@ export function Calibration() {
         setMessage('No capturamos suficientes cuadros con la mano visible. Intenta de nuevo.');
         return;
       }
-      const vectors = frames.map((f) => toFeatureVector(f.landmarks, f.handedness));
-      setTemplates(upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors)));
+      const vectors = frames.map((f) => toFeatureVector(f.landmarks, f.handedness, f.aspect));
+      // Con la trayectoria de la muñeca, para que la seña no se valide con la
+      // mano quieta (D36).
+      const motion = motionTrajectory(
+        frames.map((f) => wristSample(f.landmarks, f.handedness, f.aspect)),
+      );
+      // Y el lugar de la mano respecto a la cara, para que no valide hecha en
+      // otra parte del cuerpo (D37). Sin cara en la grabación queda sin lugar.
+      const location = locationTrajectory(
+        frames.map((f) => locationSample(f.landmarks, f.handedness, f.aspect, f.face)),
+      );
+      setTemplates(
+        upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors, undefined, motion, location)),
+      );
       setMessage(`Plantilla dinámica de "${selectedSign.gloss}" guardada (${frames.length} cuadros).`);
     }, DYNAMIC_CAPTURE_MS);
   }

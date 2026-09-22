@@ -26,6 +26,12 @@ export interface CleanupOptions {
   outFps: number;
   /** Desviación estándar del suavizado gaussiano, por hueso. */
   sigmaSeconds: (bone: string) => number;
+  /**
+   * Tramo de la seña en segundos. Se aplica DESPUÉS de suavizar, para que el
+   * filtro vea los datos a ambos lados del corte y no deforme los bordes.
+   * Sin tramo, se recorta la quietud de inicio/fin automáticamente.
+   */
+  window?: [number, number];
   /** Fracción del pico de movimiento bajo la cual se considera quieto. */
   stillFraction: number;
   /** Margen que se conserva antes/después del movimiento al recortar. */
@@ -34,23 +40,31 @@ export interface CleanupOptions {
   returnSeconds: number;
   /** Pausa en la pose inicial antes de repetir. */
   holdSeconds: number;
+  /**
+   * En el cierre del bucle, cuánto tarda en desvanecerse la velocidad con que
+   * termina la seña (y con cuánta anticipación se toma la del inicio).
+   */
+  velocityFadeSeconds: number;
 }
 
 export const DEFAULT_CLEANUP: CleanupOptions = {
   maxGapSeconds: 0.3,
   restBlendSeconds: 0.25,
-  outFps: 30,
+  outFps: 60,
   sigmaSeconds: (bone) => (/Thumb|Index|Middle|Ring|Little/.test(bone) ? 0.05 : 0.035),
   stillFraction: 0.1,
   trimMarginSeconds: 0.12,
-  returnSeconds: 0.45,
-  holdSeconds: 0.2,
+  returnSeconds: 0.4,
+  holdSeconds: 0,
+  velocityFadeSeconds: 0.1,
 };
 
 /** Clip limpio: muestras uniformes a `fps`, listo para reproducir en bucle. */
 export interface CleanClip {
   fps: number;
   frameCount: number;
+  /** Primer frame del regreso al inicio (cierre del bucle), después de la seña. */
+  returnStartFrame: number;
   tracks: Map<string, THREE.Quaternion[]>;
 }
 
@@ -161,6 +175,47 @@ export function motionRange(
   ];
 }
 
+/** Rotación `q` con el mismo eje y el ángulo multiplicado por `s` (s puede ser negativo). */
+function scaleRotation(q: THREE.Quaternion, s: number): THREE.Quaternion {
+  const shortest = q.w < 0 ? new THREE.Quaternion(-q.x, -q.y, -q.z, -q.w) : q;
+  const sinHalf = Math.sqrt(shortest.x ** 2 + shortest.y ** 2 + shortest.z ** 2);
+  if (sinHalf < 1e-9) return new THREE.Quaternion();
+  const angle = 2 * Math.atan2(sinHalf, shortest.w);
+  const axis = new THREE.Vector3(shortest.x, shortest.y, shortest.z).divideScalar(sinHalf);
+  return new THREE.Quaternion().setFromAxisAngle(axis, angle * s);
+}
+
+/**
+ * Frames que llevan del final de la seña de vuelta a su inicio sin tirones:
+ * se mezcla (smoothstep) la continuación del final —que conserva su velocidad
+ * y la va apagando— con la anticipación del inicio —que llega ya con la
+ * velocidad con que arranca la seña—. Un slerp directo entre la última y la
+ * primera pose empieza y termina con velocidad cero, y eso se veía como un
+ * frenón en cada repetición.
+ */
+export function closeLoop(
+  clip: THREE.Quaternion[],
+  frames: number,
+  fps: number,
+  fadeSeconds: number,
+): THREE.Quaternion[] {
+  const n = clip.length;
+  if (n < 2) return Array.from({ length: frames }, () => clip[0].clone());
+  const velEnd = clip[n - 2].clone().invert().multiply(clip[n - 1]);
+  const velStart = clip[0].clone().invert().multiply(clip[1]);
+  const decay = Math.exp(-1 / (fadeSeconds * fps));
+  // travel[k] = frames equivalentes recorridos k frames después, con la velocidad apagándose.
+  const travel = [0];
+  for (let k = 1; k <= frames + 1; k++) travel.push(travel[k - 1] + decay ** k);
+
+  return Array.from({ length: frames }, (_, i) => {
+    const k = i + 1;
+    const leaving = clip[n - 1].clone().multiply(scaleRotation(velEnd, travel[k]));
+    const arriving = clip[0].clone().multiply(scaleRotation(velStart, -travel[frames + 1 - k]));
+    return leaving.slerp(arriving, smoothstep(k / (frames + 1)));
+  });
+}
+
 /**
  * Pipeline completo: rellenar huecos → suavizar y remuestrear → recortar
  * quietud de inicio/fin → cerrar el bucle con una transición al primer frame.
@@ -183,20 +238,26 @@ export function cleanAnimation(
     smoothed.set(bone, smoothResample(times, filled, outTimes, opts.sigmaSeconds(bone)));
   }
 
-  const [first, last] = motionRange(smoothed, count, fps, opts);
+  const [first, last] = opts.window
+    ? [
+        Math.max(0, Math.ceil((opts.window[0] - start) * fps)),
+        Math.min(count - 1, Math.floor((opts.window[1] - start) * fps)),
+      ]
+    : motionRange(smoothed, count, fps, opts);
   const returnFrames = Math.max(1, Math.round(opts.returnSeconds * fps));
   const holdFrames = Math.round(opts.holdSeconds * fps);
 
   const tracks = new Map<string, THREE.Quaternion[]>();
   for (const [bone, track] of smoothed) {
     const clip = track.slice(first, last + 1);
-    const from = clip[clip.length - 1];
-    const to = clip[0];
-    for (let k = 1; k <= returnFrames; k++) {
-      clip.push(new THREE.Quaternion().slerpQuaternions(from, to, smoothstep(k / returnFrames)));
-    }
-    for (let k = 0; k < holdFrames; k++) clip.push(to.clone());
+    clip.push(...closeLoop(clip, returnFrames, fps, opts.velocityFadeSeconds));
+    for (let k = 0; k < holdFrames; k++) clip.push(clip[0].clone());
     tracks.set(bone, clip);
   }
-  return { fps, frameCount: last - first + 1 + returnFrames + holdFrames, tracks };
+  return {
+    fps,
+    frameCount: last - first + 1 + returnFrames + holdFrames,
+    returnStartFrame: last - first + 1,
+    tracks,
+  };
 }

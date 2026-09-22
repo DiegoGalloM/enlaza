@@ -1,4 +1,4 @@
-import { toFeatureVector } from '../../packages/cv-model/src/index.ts';
+import { locationSample, toFeatureVector, wristSample } from '../../packages/cv-model/src/index.ts';
 
 /**
  * Elige la mano activa de la seña: la que más recorre en imagen (con la
@@ -28,17 +28,71 @@ export function chooseHand(frames) {
 }
 
 /**
- * Vector de features de un frame extraído, con la MISMA etiqueta de mano que
- * daría HandLandmarker en la app: tasks-vision reporta handedness asumiendo
- * imagen espejada (selfie), así que en video sin espejar la mano anatómica
- * derecha se etiqueta 'Left' y viceversa. Holistic en cambio asigna
- * leftHand/rightHand anatómicamente (verificado con hola.mp4: la señante alza
- * su mano derecha y aparece como rightHand). Igualamos la convención de la
- * app para que el espejado a mano canónica coincida en ambos lados.
+ * Etiqueta de mano que da el HandLandmarker de la app para la mano que
+ * Holistic reporta como `side`. Tiene que coincidir: toFeatureVector espeja
+ * las manos 'Left', y si la plantilla y la cámara no usan la misma etiqueta,
+ * la plantilla queda espejada respecto a lo que ve la app y nunca coincide.
+ *
+ * MEDIDO, no supuesto (tools/content/diagnose-practice.mjs, sept 2026): con
+ * tasks-vision 1.0.0 y hand_landmarker float16/1 sobre hola.mp4, la mano que
+ * Holistic llama rightHand llega a la app como 'Right' en 72/72 frames. Antes
+ * se suponía lo contrario por la documentación (handedness "asumiendo imagen
+ * espejada") y la plantilla de Hola quedó espejada: puntaje 0.25 contra su
+ * propio video con el detector de la app.
  */
-export function frameVector(frame, side) {
+export function appHandedness(side) {
+  return side === 'right' ? 'Right' : 'Left';
+}
+
+/**
+ * Posición de muñeca y largo de mano de un frame extraído, con la misma
+ * etiqueta y proporción que la app (ver motion.ts en cv-model).
+ */
+export function frameWrist(frame, side, aspect) {
+  const lm = frame[`${side}Hand`];
+  if (!lm) return null;
+  return wristSample(
+    lm.map(([x, y, z]) => ({ x, y, z })),
+    appHandedness(side),
+    aspect,
+  );
+}
+
+/**
+ * Caja de la cara de un frame extraído ([centro x, centro y, ancho, alto],
+ * ver extract-page.html) en el formato de HandFrame.face, o undefined.
+ */
+export function faceFromBox(box) {
+  return box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : undefined;
+}
+
+/** Lugar de la mano respecto a la cara en un frame extraído (location.ts en cv-model). */
+export function frameLocation(frame, side, aspect) {
+  const lm = frame[`${side}Hand`];
+  if (!lm) return null;
+  return locationSample(
+    lm.map(([x, y, z]) => ({ x, y, z })),
+    appHandedness(side),
+    aspect,
+    faceFromBox(frame.face),
+  );
+}
+
+/** Proporción (ancho/alto) del video del que salió una extracción. */
+export function videoAspect(result) {
+  if (!result.videoWidth || !result.videoHeight) {
+    throw new Error('La extracción no trae videoWidth/videoHeight: vuelve a extraer el video');
+  }
+  return result.videoWidth / result.videoHeight;
+}
+
+/**
+ * Vector de features de un frame extraído, con la etiqueta de mano de la app
+ * y la proporción del video fuente (features v2, ver toFeatureVector).
+ */
+export function frameVector(frame, side, aspect) {
   const lm = frame[`${side}Hand`];
   if (!lm) return null;
   const landmarks = lm.map(([x, y, z]) => ({ x, y, z }));
-  return toFeatureVector(landmarks, side === 'right' ? 'Left' : 'Right');
+  return toFeatureVector(landmarks, appHandedness(side), aspect);
 }

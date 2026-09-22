@@ -9,14 +9,73 @@
  * Registro explícito (en vez de adivinar la ruta por signId) para que una seña
  * sin animación no dispare un 404 en cada lección.
  */
-const SIGN_ANIMATIONS: Record<string, string> = {
-  'lsc-cortesia-5': '/avatar/hola.landmarks.json', // Hola
+import type { FaceExpression } from './face';
+import type { Handshape } from './retarget';
+
+export interface SignAnimation {
+  /** Glosa, solo para pantallas de revisión (la lección usa la del catálogo). */
+  gloss: string;
+  url: string;
+  /**
+   * Tramo del video que es la seña, en segundos: se deja fuera la preparación
+   * y el regreso a reposo para que el avatar repita solo la seña. Se elige
+   * viendo el video cuadro por cuadro (es una decisión sobre la seña, no un
+   * umbral numérico) y se revisa con ICAL.
+   */
+  window?: [number, number];
+  /**
+   * Expresión de la cara durante la seña (gestos no manuales), con los morphs
+   * del modelo. Describe lo que hace la señante en el video: no se extrae
+   * porque MediaPipe no la captaba (A27). Se revisa con ICAL igual que el tramo.
+   */
+  face?: FaceExpression;
+  /**
+   * Configuración manual por mano, cuando la detección no la capta (dedos
+   * ocultos, p. ej. un puño contra el pecho). Describe lo que se ve en el
+   * video, como `face`, y se revisa con ICAL (A32).
+   */
+  handshape?: { left?: Handshape; right?: Handshape };
+}
+
+const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
+  // Hola: la mano sube a la frente y se aleja (hasta 1.8 s). Después baja y
+  // las manos se entrelazan en reposo, que no es parte de la seña. Empieza en
+  // 0.15 s porque el video arranca con la mano ya en movimiento y antes no
+  // hay datos con qué suavizar.
+  // Cara: sonrisa abierta durante toda la seña.
+  'lsc-cortesia-5': {
+    gloss: 'Hola',
+    url: '/avatar/hola.landmarks.json',
+    window: [0.15, 1.8],
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+  },
+  // Por favor: puño derecho apoyado en el lado izquierdo del pecho, con
+  // círculos pequeños (0.37–2.03 s en el video). Antes la mano sube desde el
+  // reposo y después se retira y las manos se entrelazan: nada de eso es la
+  // seña. El tramo es solo el contacto, así el bucle repite los círculos sin
+  // despegar la mano del pecho. La cabeza inclinada es parte de la seña.
+  // Cara: la misma sonrisa que Hola. Primero se registró la cara de súplica
+  // del video (cejas de tristeza, puchero), pero en el avatar se leía como
+  // tristeza, no como cortesía (A29); queda pendiente revisarlo con ICAL.
+  // Mano: puño cerrado (dedos ocultos contra el pecho; MediaPipe los daba a
+  // medio doblar, A32).
+  'lsc-cortesia-4': {
+    gloss: 'Por favor',
+    url: '/avatar/por-favor.landmarks.json',
+    window: [0.37, 2.06],
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+    handshape: { right: 'puño' },
+  },
 };
+
+export function listSignAnimations(): { signId: string; gloss: string }[] {
+  return Object.entries(SIGN_ANIMATIONS).map(([signId, { gloss }]) => ({ signId, gloss }));
+}
 
 export function hasSignAnimation(signId: string): boolean {
   return signId in SIGN_ANIMATIONS;
 }
 
-export function animationUrlFor(signId: string): string | null {
+export function signAnimationFor(signId: string): SignAnimation | null {
   return SIGN_ANIMATIONS[signId] ?? null;
 }

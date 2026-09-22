@@ -19,9 +19,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameVector } from './common.mjs';
+import { chooseHand, frameLocation, frameVector, frameWrist, videoAspect } from './common.mjs';
 import {
   buildDynamicTemplate,
+  locationTrajectory,
+  motionTrajectory,
   buildStaticTemplate,
   euclideanDistance,
 } from '../../packages/cv-model/src/index.ts';
@@ -186,7 +188,7 @@ export async function buildAlphabet(extractor) {
     const letter = LETTERS[i];
     const segment = segments[i];
     const side = chooseHand(segment);
-    const vectors = segment.map((f) => frameVector(f, side)).filter(Boolean);
+    const vectors = segment.map((f) => frameVector(f, side, videoAspect(result))).filter(Boolean);
     if (vectors.length < STATIC_WINDOW) {
       throw new Error(`Letra ${letter} (${describe(segment)}): solo ${vectors.length} frames con mano.`);
     }
@@ -195,7 +197,13 @@ export async function buildAlphabet(extractor) {
     const sourceMs = Math.round((withHand[withHand.length - 1].t - withHand[0].t) * 1000);
     templates.push(
       DYNAMIC_LETTERS.has(letter)
-        ? buildDynamicTemplate(signId, vectors, sourceMs)
+        ? buildDynamicTemplate(
+            signId,
+            vectors,
+            sourceMs,
+            motionTrajectory(withHand.map((f) => frameWrist(f, side, videoAspect(result)))),
+            locationTrajectory(withHand.map((f) => frameLocation(f, side, videoAspect(result)))),
+          )
         : buildStaticTemplate(signId, stillestWindow(vectors, STATIC_WINDOW)),
     );
     console.log(

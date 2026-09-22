@@ -36,7 +36,7 @@
       : null;
 
   async function main() {
-    const { FilesetResolver, HolisticLandmarker } = await import(
+    const { FilesetResolver, HolisticLandmarker, FaceDetector } = await import(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/+esm'
     );
     const vision = await FilesetResolver.forVisionTasks(
@@ -49,6 +49,22 @@
       },
       runningMode: 'VIDEO',
     });
+    // Caja de la cara (BlazeFace, el mismo detector que la práctica): referencia
+    // del lugar de la mano (D37). [centro x, centro y, ancho, alto], normalizada.
+    const faceDetector = await FaceDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+      },
+      runningMode: 'VIDEO',
+    });
+    const faceBox = (image, ts, w, h) => {
+      const boxes = faceDetector.detectForVideo(image, ts).detections.map((d) => d.boundingBox);
+      const box = boxes.sort((a, b) => b.width * b.height - a.width * a.height)[0];
+      if (!box) return null;
+      const q = (n) => Math.round(n * 10000) / 10000;
+      return [q((box.originX + box.width / 2) / w), q((box.originY + box.height / 2) / h), q(box.width / w), q(box.height / h)];
+    };
 
     const video = document.getElementById('v');
     video.src = videoUrl;
@@ -98,6 +114,7 @@
             rightHand: pack(unwrap(r.rightHandLandmarks)),
             leftHandWorld: pack(unwrap(r.leftHandWorldLandmarks)),
             rightHandWorld: pack(unwrap(r.rightHandWorldLandmarks)),
+            face: faceBox(video, ts, video.videoWidth, video.videoHeight),
           };
           if (sigCtx) frame.sig = captionSignature();
           frames.push(frame);
@@ -112,6 +129,7 @@
       video.onended = () => setTimeout(resolve, 100);
     });
     landmarker.close();
+    faceDetector.close();
 
     window.__result = {
       source: videoUrl.replace(/^\//, ''),
@@ -122,6 +140,7 @@
       videoHeight: video.videoHeight,
       duration: round(video.duration),
       poseFormat: '[x, y, z, visibility] world (metros, origen en caderas)',
+      faceFormat: 'face: [centro x, centro y, ancho, alto] de la cara, normalizado (BlazeFace)',
       handFormat: '[x, y, z] — *Hand: imagen normalizada; *HandWorld: metros, origen en la mano',
       frames,
     };

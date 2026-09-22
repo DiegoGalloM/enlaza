@@ -36,7 +36,7 @@ Nota de herramientas: Ready Player Me cerró permanentemente en enero de 2026 �
 
 ## Restricciones y límites
 
-- No expandas el modelo de reconocimiento a cara/cuerpo en esta iteración — sigue siendo solo manos. Extender a Holistic Landmarker para gramática no manual es un tema de post-MVP (cuando el proyecto llegue a frases), no de ahora.
+- No expandas el modelo de reconocimiento a cara/cuerpo en esta iteración — sigue siendo solo manos. *(2026-09-18: se permitió usar la caja de la cara solo como punto de referencia del lugar de la mano, sin analizar la expresión; ver D37.)* Extender a Holistic Landmarker para gramática no manual es un tema de post-MVP (cuando el proyecto llegue a frases), no de ahora.
 - No inventes vocabulario, glosas ni reglas gramaticales de LSC que no vengan de FENASCOL/ICAL.
 - Haz commits pequeños y frecuentes, uno por cada sub-paso identificable (ej.: "extracción de landmarks de la seña de referencia", "modelo humanoide cargado en la escena", "retargeting mapeado para una seña", "animación reproduciéndose en la UI"). Trabaja en una rama nueva (`feature/avatar-poc`) en vez de directo en `main`.
 - CI/CD no es prioridad ahora. Si sobra tiempo y presupuesto después de las fases 1 y 2, un workflow simple de GitHub Actions que corra `npm test` en cada PR es un buen primer paso — no lo hagas si compite con las fases 1-2.

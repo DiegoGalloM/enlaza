@@ -1,12 +1,22 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm';
+import { addHairColliders, measureRig, type AvatarRig } from './rig';
 
 export interface AvatarScene {
   vrm: VRM;
+  /** Medidas del modelo en reposo (huesos y silueta), para el retargeting. */
+  rig: AvatarRig;
   /** Avanza la simulación (springbones, humanoid) y renderiza un frame. */
   render(deltaSeconds: number): void;
+  /** Avanza la simulación sin renderizar (para asentar el pelo antes de mostrar). */
+  simulate(deltaSeconds: number): void;
   resize(width: number, height: number): void;
+  /**
+   * Gira la cámara alrededor del avatar (grados; 0 = de frente, 90 = desde su
+   * izquierda). Para revisar contactos con el cuerpo que de frente no se ven.
+   */
+  setCameraYaw(degrees: number): void;
   dispose(): void;
 }
 
@@ -45,6 +55,8 @@ export async function createAvatarScene(canvas: HTMLCanvasElement): Promise<Avat
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   scene.add(vrm.scene);
   vrm.scene.updateMatrixWorld(true);
+  const rig = measureRig(vrm);
+  addHairColliders(vrm, rig);
 
   // Encuadre de tren superior calculado desde el rig (la altura del modelo varía):
   // de la cintura a la punta del pelo, y a lo ancho el espacio de señas frente al
@@ -63,18 +75,29 @@ export async function createAvatarScene(canvas: HTMLCanvasElement): Promise<Avat
   const halfHeight = ((top - bottom) / 2) * 1.05;
   const halfWidth = torso * 0.75;
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+  let yaw = 0;
   const frame = () => {
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const distance = Math.max(halfHeight / tanHalf, halfWidth / (tanHalf * camera.aspect));
-    camera.position.set(0, centerY, distance);
+    camera.position.set(Math.sin(yaw) * distance, centerY, Math.cos(yaw) * distance);
     camera.lookAt(0, centerY, 0);
   };
 
   return {
     vrm,
+    rig,
+    simulate(deltaSeconds: number) {
+      vrm.update(Math.min(deltaSeconds, MAX_PHYSICS_DELTA));
+    },
     render(deltaSeconds: number) {
       vrm.update(Math.min(deltaSeconds, MAX_PHYSICS_DELTA));
       renderer.render(scene, camera);
+    },
+    setCameraYaw(degrees: number) {
+      const next = THREE.MathUtils.degToRad(degrees);
+      if (next === yaw) return;
+      yaw = next;
+      frame();
     },
     resize(width: number, height: number) {
       renderer.setPixelRatio(renderScale());

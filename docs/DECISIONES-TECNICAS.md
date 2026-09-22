@@ -148,6 +148,164 @@
 
 ---
 
+## Avatar 3D
+
+Las decisiones del avatar (extracción, limpieza de la animación, retargeting, pelo, render) están en [AVATAR-DECISIONES.md](AVATAR-DECISIONES.md), numeradas A1, A2…
+
+---
+
+## Reconocimiento con plantillas de los videos de ICAL (sept 2026)
+
+### D29. La etiqueta de mano de las plantillas se MIDE contra el detector de la app
+**Qué:** `tools/content/common.mjs` etiqueta como `'Right'` la mano que Holistic reporta como `rightHand` (`appHandedness`), y la plantilla de Hola se regeneró.
+**Por qué:** la plantilla se había construido suponiendo, por la documentación de MediaPipe, que HandLandmarker etiqueta al revés en video sin espejar. Al medirlo con el mismo modelo y versión que usa la app (`diagnose-practice.mjs`), la mano derecha de la señante llega como `'Right'` en 72/72 frames. Como `toFeatureVector` espeja las manos `'Left'`, la plantilla quedó espejada respecto a lo que ve la cámara, y **Hola nunca podía validarse: 0.25 contra su propio video, con umbral de 0.60**. Así se explica lo observado en la práctica: la app detectaba la mano y dibujaba los nodos, pero nunca reconocía la seña.
+**Descartado:** confiar en la documentación sin medir. Queda escrito en el código de dónde sale la convención.
+
+### D30. La plantilla usa el mismo tramo de seña que el avatar
+**Qué:** `build-templates.mjs` recorta cada video con el `window` registrado en `apps/web/src/avatar/animations.ts` (Hola: 0.15–1.8 s) antes de construir la plantilla.
+**Por qué:** DTW compara la ventana de captura completa contra la plantilla completa. La plantilla de Hola incluía el regreso a reposo con las manos entrelazadas (hasta 2.8 s), algo que nadie hace al copiar la seña. Aun con la etiqueta corregida, hacer solo la seña daba 0.42 y no validaba. Con el tramo: 0.69. Un solo registro de "qué es la seña" evita que el avatar enseñe una cosa y el validador espere otra.
+
+### D31. Diagnóstico con el detector real de la app, no solo con los landmarks de la plantilla
+**Qué:** `tools/content/diagnose-practice.mjs` pasa el video por el mismo HandLandmarker de la práctica (`hand-extract-page.html`) y lo repite por `SessionValidator` en escenarios de uso: solo la seña, más lento o más rápido, repeticiones seguidas y cámara 4:3.
+**Por qué:** `verify-template.mjs` reutilizaba los landmarks de Holistic con la misma convención de etiqueta con que se construyó la plantilla, así que el error de D29 no podía aparecer ahí (daba "Todo en orden").
+**Resultado tras D29 y D30** (misma señante del video):
+
+| Cámara | Puntaje | ¿Valida? |
+|---|---|---|
+| 16:9 | 0.66–0.69 | sí, en todos los escenarios |
+| 4:3 | 0.60–0.62 | sí, pero al filo del umbral |
+
+Sin falsos positivos contra las otras 9 señas de cortesía (máximo 0.50, Buenos días).
+**Riesgo de cámara 4:3:** resuelto en D33. **Sigue abierto:** no se ha medido con otra persona; el techo con la misma señante es el punto de referencia, y la precisión real solo se sabe probando con usuarios.
+
+### D32. El puntaje se muestra como nivel en palabras, no como porcentaje
+**Qué:** al validar, la práctica muestra "¡Correcta! · Bien / Muy bien / Excelente" en vez de "· 66%". `scoreLevel` (cv-model, `quality.ts`) divide en tercios el tramo entre el umbral de aceptación y el techo práctico de cada tipo de seña. Dinámica: 0.60–0.72, el techo medido con la señante de Hola (0.69 antes de D33). Estática: 0.92–0.99, un techo hipotético por calibrar. El puntaje crudo se sigue guardando en el intento.
+**Por qué:** el puntaje de DTW es `1 / (1 + distancia)` y nunca llega a 1 con landmarks reales; ni la propia referencia pasa de 0.72. Mostrado como porcentaje, un 66% (cerca del máximo alcanzable) se leía como una nota baja o como "66% de certeza", que no es.
+**Descartado:** reescalar a un porcentaje 0–100 (seguiría pareciendo certeza) y ocultar el nivel (se pierde retroalimentación útil para mejorar).
+
+### D33. Features independientes de la proporción de la cámara (v2), con migración automática
+**Qué:** `toFeatureVector` multiplica x y z por la proporción de la imagen (ancho/alto) antes de normalizar, y cada `HandFrame` trae esa proporción, que es obligatoria. Las plantillas pasan a formato versión 2 (`FEATURE_VERSION`):
+- **Incluidas con la app:** se regeneran con la proporción del video fuente.
+- **Grabadas en `/plantillas` (v1):** se migran solas al abrir la cámara en la práctica o en la calibración, con la proporción de esa cámara, y se borra la copia v1.
+- **Archivos v1 importados de otro dispositivo:** se migran suponiendo 16:9, lo que la app pide a la cámara.
+
+**Por qué:** MediaPipe normaliza x por el ancho y y por el alto (z va en la escala de x), así que la misma mano queda deformada de forma distinta en una cámara 16:9 que en una 4:3. Con la plantilla de Hola, una webcam 4:3 quedaba al filo del umbral (0.60–0.62).
+
+**Resultado medido** (`diagnose-practice.mjs`, misma señante; sin falsos positivos, el máximo bajó de 0.50 a 0.45):
+
+| Escenario | Antes (v1) | Ahora (v2) |
+|---|---|---|
+| Cámara 16:9 | 0.66–0.69 | 0.66–0.72 |
+| Cámara 4:3 | 0.60–0.62 | 0.68–0.73 |
+
+**Migración exacta, no aproximada:** un vector v1 guarda (punto − muñeca) / escala. Al escalar x y z y renormalizar por el nuevo largo muñeca→nudillo medio (que se lee del propio vector), la escala original se cancela y el resultado es idéntico a recalcular desde los landmarks, con error < 1e-9 en las pruebas. En promedios (estáticas) y secuencias remuestreadas (dinámicas) es una aproximación muy cercana. La proporción no se guarda por plantilla: con features v2 ya no hace falta, y la versión del archivo basta para saber si hay que migrar.
+
+**Descartado:**
+- Pedir que se regraben las plantillas: pierde trabajo del usuario sin necesidad.
+- Suponer 16:9 también para las locales: la cámara que las grabó es casi seguro la del mismo dispositivo, y su proporción se puede leer.
+
+### D34. "Reintentar la seña" sin recargar ni reabrir la cámara
+**Qué:** al validar una seña, la práctica ofrece "Reintentar la seña". Reinicia el validador (incluida la ventana de frames de las dinámicas) y el estado en pantalla, con la cámara y el detector abiertos. Cada acierto se registra como un intento propio.
+**Por qué:** para practicar varias veces o buscar un mejor nivel (Bien → Excelente) había que refrescar la página, lo que reabre la cámara y recarga el detector. Registrar cada acierto no duplica el progreso: el API inserta el intento en el historial y el dominio de la seña es `INSERT OR IGNORE`.
+**Detalle:** en una seña estática, si la mano sigue en la pose al pulsar el botón, vuelve a validar en cuanto se sostienen los 8 frames. Es el mismo criterio de siempre, no un atajo.
+
+### D35. Límite del reconocimiento: solo ve la forma de la mano (Por favor lo expone)
+**Qué:** la plantilla de Por favor valida con su video y sin falsos positivos contra las otras 9 señas, pero **un puño quieto también la valida**:
+
+| Entrada | Resultado |
+|---|---|
+| Un solo frame del puño repetido 2 s | valida a los 0.3 s, puntaje 0.758 |
+| La seña completa | 0.62–0.69 |
+| Mano congelada contra Hola | no valida (0.56) |
+
+**Por qué pasa:** las features son la forma de la mano relativa a su propia muñeca (D17). No incluyen dónde está la mano respecto al cuerpo ni su trayectoria. En Hola la forma cambia durante la seña, así que DTW exige hacerla. En Por favor la forma es un puño casi constante; lo que la define es el lugar (pecho) y el movimiento (círculos), y ninguno de los dos entra en la comparación.
+
+**Opciones** (decisión pendiente, afecta la arquitectura):
+1. **Movimiento de la muñeca en la imagen:** desplazamiento respecto al inicio de la ventana, normalizado por el largo de la mano. HandLandmarker ya lo da, así que es barato. Distingue "puño quieto" de "puño en círculos", pero no dónde está el puño.
+2. **Posición respecto al cuerpo:** agregar pose (hombros, cara) en la app, por ejemplo con Holistic o PoseLandmarker. Captura el lugar de articulación, que en LSC es distintivo (Oviedo). Cuesta más cómputo en el cliente y cambia las features a una v3 con migración.
+3. **Aceptarlo por ahora**, documentado, mientras se completan las señas.
+
+**Recomendación:** 1 ahora y 2 cuando haya más señas que se distingan por lugar. Antes de elegir conviene medir cuántas de las 10 señas de cortesía comparten configuración manual.
+
+**Resultado de Por favor con el detector de la app** (`diagnose-practice.mjs`): valida en todos los escenarios, con 0.62–0.66 en cámara 16:9 y 0.66–0.69 en 4:3. Hola sigue validando y ninguna de las dos plantillas da falsos positivos contra las otras 9 señas (`verify-template.mjs`).
+
+**Estado:** opción 1 implementada en D36 (el puño quieto ya no valida). Opción 2 implementada en D37 con la cara como referencia, en lugar de la pose completa: los círculos fuera del pecho ya no validan.
+
+### D36. Movimiento de la muñeca en señas dinámicas: compuerta de cantidad + término DTW leve
+**Qué:** cada frame aporta, además de la forma de la mano, la posición de la muñeca en la imagen (`motion.ts`), normalizada así:
+- x escalada por la proporción y espejada en manos izquierdas, como la forma;
+- en largos de mano (mediana de la ventana);
+- suavizada con un promedio móvil de 5 frames;
+- remuestreada a 16 y centrada.
+
+Las plantillas dinámicas guardan esa trayectoria (`motion`) y se usa de dos formas:
+1. **Compuerta** (`MIN_MOTION_RATIO = 0.4`): si la plantilla se mueve y la captura se mueve menos del 40% de eso (distancia RMS al centro), el puntaje se escala hacia abajo en proporción.
+2. **Término DTW** (`MOTION_WEIGHT = 0.5`): el costo de cada par de frames es raíz(forma² + (0.5 · movimiento)²).
+
+**Por qué así, y no solo con DTW:** fue lo primero que se probó, midiendo con `tools/content/tune-motion.mjs` (nuevo):
+- Con pesos DTW de 0.5 a 4, **la mano quieta seguía validando** Por favor (0.76 → 0.65). Sus círculos miden 0.22 largos de mano (RMS), así que un puño quieto queda "cerca" de ellos en cada frame.
+- Con peso 3–4 la seña real empezaba a fallar a 1.25×.
+- La compuerta, en cambio, lleva la mano quieta a 0 y deja la seña real igual con cualquier fracción entre 0.3 y 0.5.
+
+**Por qué el suavizado:** el temblor real del detector con la mano quieta, medido en los videos, es de ~0.005 del alto de imagen por frame (RMS 0.04–0.075 largos de mano). Es comparable a los círculos pequeños, y con temblor simulado de ese orden la mano quieta volvía a validar. El promedio de 5 frames lo reduce ~√5 sin tocar los círculos (~1.5 Hz).
+
+**Resultado medido** (misma señante; temblor simulado 0.003, equivalente al real; sin falsos positivos contra las otras señas):
+
+| Seña | Seña real, 16:9 y 4:3, 0.8×–1.25× | Mano quieta, antes | Mano quieta, ahora |
+|---|---|---|---|
+| Por favor | 0.61–0.65 | valida (0.75) | no valida (0.26) |
+| Hola | 0.66–0.73 | no validaba (0.56) | no valida |
+
+Con temblor de 0.005 (más que el real) la mano quieta tampoco valida. Con 0.008 (3× el real) sí vuelve a validar.
+
+**Compatibilidad:** las plantillas sin `motion` (grabadas en `/plantillas` antes de esto) se comparan solo por forma, como antes. No cambia `FEATURE_VERSION` porque los vectores de forma son los mismos. Las grabaciones nuevas en `/plantillas` ya guardan la trayectoria.
+
+**Límites:**
+- No sabe dónde está la mano respecto al cuerpo (D35, opción 2).
+- Una seña real con movimiento muy pequeño respecto a la plantilla (círculos de menos del 40%) se rechaza. La prueba unitaria fija ese comportamiento.
+- Los parámetros salen de dos señas de una sola señante: hay que recalibrar con `tune-motion.mjs` al agregar señas y al probar con personas.
+
+### D37. Lugar de la seña: la mano respecto a la caja de la cara
+**Qué:** la práctica corre, además de HandLandmarker, el detector de caras de MediaPipe (BlazeFace de corto alcance, ~230 KB). Cada frame trae la caja de la cara (`HandFrame.face`), y `location.ts` mide el centro de la mano (entre muñeca y nudillo medio) relativo al centro de la cara:
+- en altos de cara, así no depende de la distancia a la cámara;
+- x escalada por la proporción y espejada en manos izquierdas, igual que la forma y el movimiento.
+
+Las plantillas dinámicas guardan esa trayectoria (`location`, 16 × [x, y], sin centrar). Al comparar, DTW ahora devuelve también el camino de alineación (`dtwAlign`). Sobre esos pares de frames se promedia el error de lugar, y una **compuerta** baja el puntaje:
+- sin cambio hasta `LOCATION_TOLERANCE = 0.6` altos de cara;
+- en línea recta hasta 0 en 1.2.
+
+**Por qué la cara y no la pose del cuerpo (opción 2 de D35):**
+- **Decisión del equipo (2026-09-18):** se relaja la restricción del encargo ("solo manos") únicamente para usar la cara como punto de referencia. No se analiza la expresión, así que no es reconocimiento de gramática no manual.
+- **Costo:** BlazeFace cuesta ~1–2 ms por frame frente a ~10–20 ms de PoseLandmarker. De frente a una webcam, la cara es lo más estable que se ve.
+- **Escala:** el alto de la cara sirve de unidad de medida sin supuestos sobre proporciones del cuerpo.
+
+**Por qué compuerta y no término DTW:** con el movimiento (D36) se vio que un término DTW débil no alcanza a rechazar. Además, el lugar se compara sobre la alineación que ya dio la forma, así que no deforma el emparejamiento.
+
+**Resultado medido** (`tune-motion.mjs`, misma señante, temblor 0.003; el lugar desplazado mueve la mano y deja la cara donde está):
+
+| Seña | Seña real 16:9 y 4:3, 0.8×–1.25× | Mano quieta | Arriba 1.2 (cara) | Abajo 1.2 (vientre) | Lado 1.2 | Lado 0.8 | Falsos positivos |
+|---|---|---|---|---|---|---|---|
+| Por favor, antes | 0.63–0.67 | no | valida 0.64 | valida 0.64 | valida 0.64 | valida 0.64 | 0 |
+| Por favor, ahora | 0.63–0.67 | no | no 0.31 | no 0.00 | no 0.07 | no 0.51 | 0 |
+| Hola, ahora | 0.65–0.70 | no | no 0.36 | no 0.00 | no 0.00 | no 0.39 | 0 |
+
+La seña real no pierde puntaje: su error de lugar queda dentro de la tolerancia. Con tolerancia 0.8 o 1.0 los desplazamientos de 0.8–1.2 vuelven a validar; con 0.4 no cambia nada medible, pero deja menos margen a otras personas. Se eligió 0.6.
+
+**Compatibilidad:**
+- Sin cara en la captura (menos de la mitad de los frames con cara), o con una plantilla sin `location` (grabada antes de esto), se compara como antes, por forma y movimiento.
+- Si el detector de caras no carga, la práctica sigue funcionando sin lugar.
+- No cambia `FEATURE_VERSION`: los vectores de forma son los mismos.
+- `/plantillas` ya guarda el lugar.
+
+**Herramientas:** `extract-page.html` y `hand-extract-page.html` guardan la caja de la cara de cada frame con el mismo modelo que la app, así que las plantillas y los diagnósticos se construyen igual que lo que ve la práctica. Los cachés de extracción se regeneraron. `tune-motion.mjs` acepta `peso:fracción:tolerancia` y reporta la seña desplazada.
+
+**Límites:**
+- La tolerancia sale de una sola señante. Personas con otras proporciones (cuello largo, cara pequeña) pueden quedar más lejos del lugar de la plantilla. Hay que medir con personas y recalibrar con `tune-motion.mjs`.
+- No distingue profundidad: una mano frente al pecho, sin tocarlo, cuenta igual que apoyada.
+- Las señas estáticas (abecedario) no usan lugar.
+
+---
+
 ## Un párrafo de síntesis
 
 Casi todas las decisiones se derivan de tres restricciones que fija el brief: **(1) no existe dataset de LSC** → clasificador few-shot por plantillas + herramienta de calibración + regresión sintética con plan de sustitución; **(2) el video del usuario es dato sensible** → todo el CV en el cliente, el API solo ve resultados, plantillas en localStorage; **(3) esto lo mantiene una persona con presupuesto ~cero** → SPA estática, SQLite sin deps nativas, stdlib de Node para crypto, workspaces de npm sin herramientas extra. Donde hubo que inventar números (umbrales, frames de hold) están nombrados, centralizados y marcados para calibrarse con datos reales.
