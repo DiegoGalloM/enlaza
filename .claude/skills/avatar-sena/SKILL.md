@@ -18,7 +18,7 @@ cada decisión está en `docs/AVATAR-DECISIONES.md` (A1–A34). Léelo antes de 
 | lsc-cortesia-0 | Buenos días | buenos-dias.mp4 | pendiente |
 | lsc-cortesia-1 | Buenas tardes | buenas-tardes.mp4 | pendiente |
 | lsc-cortesia-2 | Buenas noches | buenas-noches.mp4 | pendiente |
-| lsc-cortesia-3 | Gracias | gracias.mp4 | pendiente |
+| lsc-cortesia-3 | Gracias | gracias.mp4 | hecha (A35–A37) |
 | lsc-cortesia-4 | Por favor | por-favor.mp4 | hecha (A20–A34) |
 | lsc-cortesia-5 | Hola | hola.mp4 | hecha (A1–A28) |
 | lsc-cortesia-6 | Con mucho gusto | con-mucho-gusto.mp4 | pendiente |
@@ -62,11 +62,22 @@ Al terminar una seña, actualiza esta tabla.
      pidió caras amables y consistentes. Una cara de súplica o tristeza se leyó
      como "triste" en el avatar (A29). Usa otra cara solo si la seña lo exige y
      compárala lado a lado con Hola antes de dejarla.
-   - `handshape: { right: 'puño' }` cuando los dedos no se ven en el video
-     (puño, dedos contra el cuerpo). MediaPipe los da a medio doblar y el
-     avatar muestra un gancho abierto (A32). Para una configuración nueva
-     (plana, índice, C…), agrégala a `HANDSHAPE_FLEX` en `retarget.ts`, con su
-     pulgar en `handshapeThumbTarget`.
+   - `handshape: { right: 'puño' | 'plana' }` cuando los dedos no se ven o la
+     detección los tuerce (dedos contra el cuerpo, mano de canto). MediaPipe los
+     da a medio doblar y el avatar muestra un gancho abierto (A32). Para una
+     configuración nueva (índice, C…), agrégala a `HANDSHAPE_FLEX` en
+     `retarget.ts`, con su pulgar en `handshapeThumbTarget`.
+   - `faceContact: { right: [a, b] }` si la yema toca la cara (labios, mentón,
+     frente): MediaPipe pone la mano hasta 17 cm por delante y el avatar la deja
+     flotando, lo que solo se ve de lado (A35).
+   - `palmUp: { left: [a, b], right: [a, b] }` si la mano va con la palma hacia
+     arriba y la detección no es confiable (dos manos encimadas: anchos de
+     nudillos de 1–4 cm en vez de 6.5). La orientación sale del antebrazo (A36).
+   - `holdUntil: { left: t }` para que la mano de apoyo empiece ya en su lugar,
+     en vez de subir desde el regazo, que es preparación (A37).
+   - `hand: 'right' | 'left'`: la mano que hace la seña, para la plantilla de
+     reconocimiento (si no, la elige por cuánto se mueve cada mano y con dos
+     manos se confunde, A37).
 4. **Revisar en `/avatar-poc?sena=<signId>`.** Ver la lista de control abajo.
 5. **Plantilla de reconocimiento y verificación.** Son los pasos 5–6 de la
    "Receta para una seña nueva" en `docs/AVATAR-DECISIONES.md`:
@@ -112,6 +123,12 @@ Captura en `<scratch>` (el scratchpad de la sesión), nunca en el repo:
 | Pelo atrapado o distinto en cada carga | `settlePhysics` (A24) |
 | Mechones rígidos al inclinar la cabeza | gravedad de mechones largos (A25) |
 | Cara triste o congelada | sonrisa de Hola y parpadeo (A28, A29) |
+| Mano flotando frente a la cara (se ve de lado) | `faceContact`: la yema se apoya en la piel medida (A35) |
+| Codo alto y antebrazo horizontal con la mano en la cara | la mano gira sobre la yema, elegido junto con el brazo (A35) |
+| Mano que se va al costado con dos manos encimadas | `palmUp`: orientación registrada, sin usar la detección (A36) |
+| Latigazo al girar la palma hacia arriba | giro del antebrazo en rango anatómico (A36) |
+| Manos cortadas en el borde de abajo | encuadre desde cadera + 0.1 torsos (A37) |
+| Plantilla que sale de la mano de apoyo | `hand` registrada en la seña (A37) |
 | Torso de maniquí | respiración (A34) |
 
 ## Trampas conocidas

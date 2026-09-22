@@ -35,6 +35,7 @@ const until = Number(
 const VIDEOS = {
   'lsc-cortesia-4': 'content/ical-2026-09/por-favor.mp4',
   'lsc-cortesia-5': 'content/ical-2026-09/hola.mp4',
+  'lsc-cortesia-3': 'content/ical-2026-09/gracias.mp4',
 };
 const video = VIDEOS[signId];
 if (!video) throw new Error(`Sin video registrado para ${signId}`);

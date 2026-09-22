@@ -35,6 +35,30 @@ export interface SignAnimation {
    * video, como `face`, y se revisa con ICAL (A32).
    */
   handshape?: { left?: Handshape; right?: Handshape };
+  /**
+   * Tramo del video, en segundos, en que la yema del dedo medio toca la cara
+   * (labios, mentón). MediaPipe no da bien la profundidad de la mano frente a
+   * la cara y la dejaba flotando; con esto se apoya en la piel del modelo (A35).
+   */
+  faceContact?: { left?: [number, number]; right?: [number, number] };
+  /**
+   * Tramo del video en que la mano va con la palma hacia arriba, cuando la
+   * detección de la mano no es confiable (p. ej. dos manos encimadas). La
+   * orientación sale del antebrazo (A36).
+   */
+  palmUp?: { left?: [number, number]; right?: [number, number] };
+  /**
+   * Instante del video hasta el cual una mano se queda en la pose que tiene en
+   * él: la mano de apoyo empieza ya en su lugar en vez de subir desde el
+   * regazo, que es preparación y no seña (A37).
+   */
+  holdUntil?: { left?: number; right?: number };
+  /**
+   * Mano que hace la seña. La plantilla de reconocimiento la elegía por cuánto
+   * se movía cada mano, y en Gracias, con las dos manos encimadas, el salto de
+   * las detecciones confundidas daba la izquierda (A37).
+   */
+  hand?: 'left' | 'right';
 }
 
 const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
@@ -65,6 +89,32 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
     window: [0.37, 2.06],
     face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
     handshape: { right: 'puño' },
+  },
+  // Gracias: mano derecha plana (dedos juntos, pulgar al costado del índice)
+  // con las yemas en los labios y el mentón (0.55–1.17 s en el video); luego
+  // baja hacia el frente, gira la palma hacia arriba y se apoya con el dorso
+  // sobre la palma izquierda, también plana y hacia arriba, a la altura del
+  // abdomen (1.45–1.97 s). Antes la mano sube desde el reposo y después las
+  // manos se entrelazan: nada de eso es la seña. La izquierda ya está palma
+  // arriba desde el inicio del tramo.
+  // Cara: la misma sonrisa que Hola (la señante sonríe toda la seña).
+  // Manos: planas las dos (A35). Contacto: la yema toca la boca de 0.55 a
+  // 1.17 s; MediaPipe la ponía 15 cm por delante de la cara.
+  // Palmas arriba desde que la derecha se posa sobre la izquierda: ahí
+  // MediaPipe confunde las dos manos encimadas (A36).
+  // Mano izquierda: en el video descansa en el regazo y sube al frente a
+  // 1.1–1.45 s, fuera de cuadro en el avatar. Es preparación: empieza ya en
+  // su lugar, palma arriba al frente como a 1.5 s (A37).
+  'lsc-cortesia-3': {
+    gloss: 'Gracias',
+    url: '/avatar/gracias.landmarks.json',
+    window: [0.6, 2.0],
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+    handshape: { left: 'plana', right: 'plana' },
+    faceContact: { right: [0.6, 1.17] },
+    palmUp: { left: [1.42, 2.0], right: [1.42, 2.0] },
+    holdUntil: { left: 1.5 },
+    hand: 'right',
   },
 };
 

@@ -64,7 +64,10 @@ async function buildCourtesy(extractor, wanted) {
     // los hace (Hola completo: 0.42 haciendo solo la seña).
     const [from, to] = signAnimationFor(signId)?.window ?? [-Infinity, Infinity];
     const frames = result.frames.filter((f) => f.t >= from && f.t <= to);
-    const side = chooseHand(frames);
+    // Mano de la seña: la registrada (animations.ts), que es la misma fuente
+    // de verdad que el tramo. Con dos manos encimadas (Gracias) el criterio
+    // automático se confundía y elegía la de apoyo (A37).
+    const side = signAnimationFor(signId)?.hand ?? chooseHand(frames);
     if (!side) throw new Error(`Sin manos detectadas en ${video}`);
     const withHand = frames.filter((f) => f[`${side}Hand`]);
     const vectors = withHand.map((f) => frameVector(f, side, videoAspect(result)));

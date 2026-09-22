@@ -114,6 +114,9 @@ export function SignAvatar({
           window: animation.window,
           face: animation.face,
           handshape: animation.handshape,
+          faceContact: animation.faceContact,
+          palmUp: animation.palmUp,
+          holdUntil: animation.holdUntil,
         });
         canvas.dataset.duration = player.duration.toFixed(3);
         // Gancho de revisión en desarrollo (como __enlazaFakeDetector): permite

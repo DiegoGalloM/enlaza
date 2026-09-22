@@ -368,3 +368,150 @@ Se eligió 25° / 10°, dentro del rango anatómico de la clavícula. Hola no cr
   - Por favor: brazo 119, antebrazo 39, muñeca 241, pulgar ≤ 132. Los dedos largos quedan en 0 porque el puño es fijo.
   - Hola: igual que antes (brazo 149).
 - **Visual:** frente, ±45°, ±70° y diez cuadros en movimiento. Puño cerrado con el pulgar al costado del índice, antebrazo en diagonal, mechón sobre el antebrazo y detrás del puño, sin cruces. Hola: igual a 0.3, 0.8 y 1.3 s.
+
+---
+
+# Séptima iteración: Gracias, la primera seña con contacto en la cara y dos manos (2026-09-22)
+
+Pedido: llevar al avatar la seña Gracias. En el video, la mano derecha plana toca
+los labios y el mentón (0.6–1.17 s), baja al frente girando la palma hacia arriba
+y se apoya con el dorso sobre la palma izquierda, también plana y hacia arriba
+(1.45–1.97 s). Es la primera seña con **contacto en la cara** y la primera con
+**las dos manos encimadas**: las dos cosas rompen supuestos del retargeting, no
+por el modelo, sino porque MediaPipe no da esos datos.
+
+## A35. Contacto registrado con la cara: la yema se apoya en la piel medida
+
+**Qué:**
+- `animations.ts` acepta `faceContact: { right: [0.6, 1.17] }`: el tramo del
+  video en que la yema del dedo medio toca la cara. En él, el objetivo de la
+  muñeca no sale de la posición observada, sino de dónde queda la yema: se
+  conserva lo que MediaPipe sí acierta —dónde está la yema respecto a la boca en
+  el plano de la cara, escalado— y la profundidad se toma de la **piel del
+  modelo** más el radio del dedo.
+- `rig.ts` mide esa piel: `FaceProfile` guarda el centro de la boca (los
+  vértices que mueve el morph `*Fcl_MTH_A`) y una rejilla de 5 mm con la z más
+  adelantada de la cara alrededor de ella. Todo en el marco de la cabeza, que
+  gira con la seña.
+- La mano gira **alrededor de la yema** (inclinación en x, la muñeca hacia el
+  frente) y esa inclinación se elige junto con el brazo, por el costo total de
+  `solveArmClearance` (que ahora devuelve su costo) más el de inclinar.
+- Con contacto, la mano no se adelanta (`maxPush` a 0) y de la mano solo se
+  prueba la muñeca contra el cuerpo.
+
+**Por qué (medido en el video y en el avatar):**
+- **La profundidad de MediaPipe no sirve cerca de la cara.** En los landmarks de
+  gracias.mp4 la yema queda a 0–5 cm de la boca en x/y (el mentón), pero de
+  13 a 17 cm **por delante**. El avatar dejaba la mano flotando a un palmo de la
+  cara: se ve en la vista de lado, no de frente.
+- **La silueta del cuerpo no sirve para apoyar la yema.** `BodyProfile` toma el
+  envolvente de las franjas vecinas, así que a la altura de los labios ya
+  incluye la nariz, 1.5 cm más adelante. Por eso la cara se mide aparte, y por
+  eso con contacto los dedos no entran a la prueba de colisión.
+- **Adelantar la mano (A30) despega el contacto:** la yema quedaba a 7 cm de los
+  labios porque la muñeca rozaba la camisa y `solveArmClearance` empujaba.
+- **La orientación observada de la mano también está torcida:** con la yema en
+  los labios dejaba la muñeca contra el cuello y el antebrazo 13 cm dentro del
+  torso. Una persona apoya la yema y deja la muñeca delante del mentón; de ahí
+  el giro alrededor de la yema. Primero se probó "inclinar lo mínimo para sacar
+  la muñeca del cuerpo", y la inclinación se saturaba en el tope mientras el
+  antebrazo seguía atravesando el pecho y el codo subía a la altura del hombro.
+  Elegir inclinación y brazo juntos lo arregla.
+- **El contacto dura lo que la yema está en la cara**, no un tramo de tiempo: se
+  pesa por la distancia de la yema a la boca en el plano de la imagen (pleno a
+  6 cm, nada a 15 cm). Con una rampa de tiempo, al soltar, la muñeca bajaba por
+  delante del pecho conservando la profundidad del contacto y el codo subía y
+  bajaba 5 cm (tirón de 398 rad/s² en el brazo).
+- **El polo del codo se mide desde el objetivo corregido.** Desde el observado,
+  el codo quedaba "detrás" de la mano, dentro del torso. Sin contacto es el
+  mismo objetivo, así que Hola y Por favor no cambian.
+
+**Medido (Gracias, tramo del contacto):** la yema queda a 0.6–1.4 cm de la piel
+(el radio del dedo es 1.2 cm) en todo el contacto, frente a 13–17 cm antes.
+Penetración máxima del brazo derecho: 0.001 m.
+
+## A36. Lo que MediaPipe no ve de dos manos encimadas se registra: palma arriba
+
+**Qué:**
+- `animations.ts` acepta `palmUp: { left: [1.42, 2.0], right: [1.42, 2.0] }`.
+  En ese tramo **no se usa la detección de la mano**: la palma va hacia arriba y
+  los dedos siguen al antebrazo (del codo a la muñeca de la pose, en horizontal).
+- `handshape` acepta `plana` (dedos juntos y casi rectos: 0.08 / 0.06 / 0.04 rad).
+  Con configuración registrada, el pulgar parte del reposo en vez de lo
+  observado.
+- El giro del antebrazo se elige en el rango anatómico (`supinationAngle`):
+  la pronación llega a ~90° y la supinación pasa de 180°.
+
+**Por qué (medido):**
+- **Con las manos encimadas la detección es basura:** el ancho entre nudillos
+  cae a 1–4 cm (el real es 6.5) y la normal de la palma se voltea de un frame a
+  otro. El filtro de manos implausibles (A23) descartaba casi todos los frames
+  de la mano derecha, y como el hueco llega al final del tramo, la limpieza
+  (A5) la mandaba al reposo: la mano terminaba colgando al costado en vez de
+  sobre la palma izquierda. La pose del cuerpo sí es estable ahí (visibilidad
+  0.92–0.97), y el antebrazo da hacia dónde apuntan los dedos.
+- **Palma arriba es ~180° de supinación**, justo donde la descomposición
+  swing-twist da +180° o −180° según el ruido. Repartido 50/50 con la muñeca
+  (A15), el antebrazo saltaba de +90° a −90°: **17774 rad/s² en la mano
+  izquierda**. Con el rango anatómico, 185.
+- **Mano plana:** MediaPipe daba los dedos curvados con la mano de canto frente
+  a la cámara; en el video están juntos y rectos.
+- **Pulgar desde el reposo:** con configuración registrada lo observado es ruido
+  (A32). Partir a veces de lo observado y a veces del reposo (en los frames sin
+  landmarks) hacía saltar la solución del IK: 255 rad/s². Ahora queda fijo, y en
+  Por favor la yema del pulgar queda **en el mismo punto que antes** (1.4 cm del
+  índice, medido) pero sin jitter.
+
+## A37. Lo que no es la seña no entra: la mano de apoyo empieza en su lugar
+
+**Qué:**
+- `holdUntil: { left: 1.5 }`: antes de ese instante, el brazo izquierdo copia la
+  pose que tiene en él. La mano de apoyo empieza ya al frente, palma arriba.
+- `hand: 'right'` en el registro de la seña: la plantilla de reconocimiento y su
+  verificación usan esa mano en vez de adivinarla.
+- El encuadre baja de `cadera + 0.2 torsos` a `+ 0.1` (A10).
+
+**Por qué:**
+- En el video la mano izquierda descansa en el regazo y sube al frente entre
+  1.07 y 1.44 s. Eso es preparación, igual que la subida del brazo en Hola
+  (A17), y encima ocurre **fuera de cuadro**. Costaba tres problemas: un salto
+  de 13 cm en un frame de la pose cuando la mano vuelve a entrar al cuadro
+  (490 rad/s² en el brazo), 4.7 cm de antebrazo dentro del vientre en el cierre
+  del bucle y un ciclo más largo. Con la mano quieta: brazo 124, antebrazo 52,
+  mano 88, penetración 0.014 m (el roce de la manga con el costado).
+- **La mano de la seña se registra** porque el criterio automático (la que más
+  se mueve) se confunde con dos manos encimadas: los saltos de las detecciones
+  confundidas daban la izquierda, y la plantilla salía de la mano de apoyo. Con
+  la mano registrada, la plantilla pasa de 15 frames (0.9 s) a 22 (1.4 s) y de
+  validar su propio video con 0.12 a **0.87**.
+- **Encuadre:** con 0.2 torsos las manos de Gracias, a la altura del abdomen,
+  quedaban cortadas en el borde de abajo, que es justo lo que A10 quería evitar.
+  El avatar se ve ~7% más chico; Hola y Por favor no cambian en nada más.
+
+## Verificación de la séptima iteración
+- **Pruebas:** 30 de avatar (nuevas: `supinationAngle`, `spanWeight` y
+  `tiltedContact`). `tsc -b` y `oxlint` sin errores.
+- **Contacto con el cuerpo** (`check-contacts`): Gracias, brazo derecho 0.001 m,
+  izquierdo 0.014 m (manga contra el costado, con la holgura de 1.5 cm).
+- **Suavidad** (`measure-smoothness`), aceleración máxima en rad/s²:
+  - Gracias: brazo derecho 217, antebrazo 201, mano 219; brazo izquierdo 124,
+    antebrazo 52, mano 88; cabeza 44. Sin tirones aislados; lo que queda es la
+    velocidad real del movimiento (la mano baja de la boca a la palma a ~1.3 m/s).
+  - Hola y Por favor: iguales que en A34 (brazo 149 y 119).
+- **Visual:** frente, ±45°, ±70°, la mano de cerca en las dos fases y diez
+  cuadros en movimiento. Mano plana con los dedos juntos apoyada en los labios,
+  antebrazo en diagonal, las dos palmas arriba sin cruzarse al final. Hola:
+  igual a 0.3, 0.8 y 1.3 s (solo cambia el encuadre).
+- **Reconocimiento:** `verify-template` valida su propio video a 1× / 0.7× / 1.4×
+  (0.87 / 0.75 / 0.61) y ninguna de las otras 9 señas da falso positivo (la más
+  cercana, Buenos días, 0.515 contra un umbral de 0.60). `diagnose-practice`
+  valida con el detector de la app en 16:9 y 4:3, a tres velocidades y con
+  repeticiones (0.68–0.79). `tune-motion` con 0.5:0.4:0.6: la mano quieta y la
+  seña hecha en otro lugar no validan, sin falsos positivos. Hola y Por favor
+  siguen validando igual.
+
+## Cabeza que se inclina en la segunda mitad
+No es un error del retargeting: **medido en el video**, la inclinación de la
+cabeza (nariz respecto a las orejas) pasa de ~15° a ~24° mientras las manos
+bajan. Es el asentimiento que acompaña a la seña, y queda en el mismo rango que
+Hola (22°) y Por favor (25°), que ya se revisaron.
