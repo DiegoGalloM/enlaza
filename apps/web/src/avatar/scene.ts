@@ -70,7 +70,9 @@ export async function createAvatarScene(canvas: HTMLCanvasElement): Promise<Avat
   // Coronilla desde la caja del modelo (en reposo): incluye el pelo, que una
   // estimación desde el hueso de la cabeza no ve.
   const top = new THREE.Box3().setFromObject(vrm.scene).max.y + torso * 0.04;
-  const bottom = hipsY + torso * 0.2;
+  // Con 0.2 torsos las manos de Gracias, palmas arriba a la altura del
+  // abdomen, quedaban cortadas en el borde (A37).
+  const bottom = hipsY + torso * 0.1;
   const centerY = (top + bottom) / 2;
   const halfHeight = ((top - bottom) / 2) * 1.05;
   const halfWidth = torso * 0.75;

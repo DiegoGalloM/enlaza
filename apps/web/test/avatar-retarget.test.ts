@@ -6,6 +6,9 @@ import {
   shoulderGirdle,
   solveArmClearance,
   solveTwoBoneIK,
+  spanWeight,
+  supinationAngle,
+  tiltedContact,
   type LandmarkFrame,
 } from '../src/avatar/retarget';
 import { bodyPenetration, type BodyProfile } from '../src/avatar/rig';
@@ -176,5 +179,71 @@ describe('dropImplausibleHands', () => {
       true,
       true,
     ]);
+  });
+});
+
+
+describe('supinationAngle', () => {
+  // Eje del antebrazo izquierdo en reposo (hacia +x) y derecho (hacia -x).
+  const left = new THREE.Vector3(1, 0, 0);
+  const right = new THREE.Vector3(-1, 0, 0);
+  const twistOf = (axis: THREE.Vector3, angle: number) =>
+    new THREE.Quaternion().setFromAxisAngle(axis, angle);
+
+  it('deja el giro como está dentro del rango anatómico', () => {
+    expect(supinationAngle(twistOf(left, -0.8), left, 'left')).toBeCloseTo(-0.8, 6);
+    expect(supinationAngle(twistOf(right, 0.8), right, 'right')).toBeCloseTo(0.8, 6);
+  });
+
+  it('lee la palma hacia arriba como supinación y no como pronación extrema', () => {
+    // Palma arriba es ~180°: twistAround puede dar +180° o −180° según el ruido
+    // del frame, y repartido con la muñeca eso saltaba de +90° a −90° (A36).
+    const leftUp = supinationAngle(twistOf(left, 3.0), left, 'left');
+    const leftDown = supinationAngle(twistOf(left, -3.0), left, 'left');
+    expect(leftUp).toBeCloseTo(-3.28, 2);
+    expect(leftDown).toBeCloseTo(-3.0, 6);
+    expect(Math.abs(leftUp - leftDown)).toBeLessThan(0.3);
+
+    const rightUp = supinationAngle(twistOf(right, -3.0), right, 'right');
+    const rightDown = supinationAngle(twistOf(right, 3.0), right, 'right');
+    expect(Math.abs(rightUp - rightDown)).toBeLessThan(0.3);
+    expect(rightUp).toBeGreaterThan(Math.PI);
+  });
+});
+
+describe('spanWeight', () => {
+  it('vale 1 dentro del tramo y baja con rampa afuera', () => {
+    expect(spanWeight(undefined, 1)).toBe(0);
+    expect(spanWeight([1, 2], 1.5)).toBe(1);
+    expect(spanWeight([1, 2], 1)).toBeCloseTo(1, 6);
+    expect(spanWeight([1, 2], 0.9)).toBeGreaterThan(0);
+    expect(spanWeight([1, 2], 0.9)).toBeLessThan(1);
+    expect(spanWeight([1, 2], 0.7)).toBe(0);
+    expect(spanWeight([1, 2], 2.3)).toBe(0);
+  });
+});
+
+describe('tiltedContact', () => {
+  // Mano vertical: la yema 18 cm por encima de la muñeca.
+  const contact = {
+    tip: new THREE.Vector3(0, 1.38, 0.09),
+    tipOnHand: new THREE.Vector3(0, 0.18, 0),
+    hand: new THREE.Quaternion(),
+    weight: 1,
+  };
+
+  it('sin inclinación deja la muñeca bajo la yema', () => {
+    const { wrist } = tiltedContact(contact, 0);
+    expect(wrist.y).toBeCloseTo(1.2, 6);
+    expect(wrist.z).toBeCloseTo(0.09, 6);
+  });
+
+  it('inclinar adelanta la muñeca sin mover la yema (la mano gira sobre el contacto)', () => {
+    const tilt = Math.PI / 6;
+    const { wrist, hand } = tiltedContact(contact, tilt);
+    expect(wrist.z).toBeCloseTo(0.09 + 0.18 * Math.sin(tilt), 6);
+    expect(wrist.y).toBeCloseTo(1.38 - 0.18 * Math.cos(tilt), 6);
+    // La yema sigue en el mismo punto con la mano girada.
+    expect(wrist.clone().add(contact.tipOnHand.clone().applyQuaternion(hand)).distanceTo(contact.tip)).toBeLessThan(1e-9);
   });
 });

@@ -29,6 +29,21 @@ export interface AvatarRig {
   /** Punta del hueso en reposo: su hijo, o su extremo `_end` en las distales. */
   tip(bone: string): THREE.Vector3;
   body: BodyProfile;
+  /** Superficie de la cara alrededor de la boca, para contactos (A35). */
+  face?: FaceProfile;
+}
+
+/**
+ * Relieve de la cara alrededor de la boca, en reposo: para llevar una yema a
+ * tocar los labios o el mentón (Gracias). La silueta de BodyProfile no sirve:
+ * sus franjas toman el envolvente de las vecinas y a la altura de los labios
+ * ya incluyen la nariz, 1.5 cm más adelante.
+ */
+export interface FaceProfile {
+  /** Centro de la boca (vértices que mueve el morph de boca abierta). */
+  mouth: THREE.Vector3;
+  /** z de la piel más adelantada en (x, y) de mundo en reposo; NaN fuera de la cara. */
+  frontZ(x: number, y: number): number;
 }
 
 /**
@@ -99,7 +114,97 @@ export function measureRig(vrm: VRM): AvatarRig {
     return (found ?? position(bone)).clone();
   };
 
-  return { position, direction, tip, body: measureBody(vrm, position) };
+  return { position, direction, tip, body: measureBody(vrm, position), face: measureFace(vrm) };
+}
+
+/** Posiciones de mundo en reposo de cada vértice de las mallas que cumplen `accept`. */
+function forEachVertex(
+  vrm: VRM,
+  accept: (mesh: THREE.Mesh) => boolean,
+  visit: (v: THREE.Vector3, mesh: THREE.Mesh, i: number) => void,
+): void {
+  const v = new THREE.Vector3();
+  vrm.scene.traverse((obj) => {
+    const mesh = obj as THREE.SkinnedMesh;
+    if (!mesh.isMesh || !accept(mesh)) return;
+    const count = mesh.geometry.getAttribute('position').count;
+    for (let i = 0; i < count; i++) {
+      mesh.getVertexPosition(i, v);
+      if (mesh.isSkinnedMesh) mesh.applyBoneTransform(i, v);
+      v.applyMatrix4(mesh.matrixWorld);
+      visit(v, mesh, i);
+    }
+  });
+}
+
+/** Rejilla del relieve de la cara: celdas de 5 mm, de -6 a 6 cm en x y de -7 a 5 cm en y desde la boca. */
+const FACE_CELL = 0.005;
+const FACE_X = [-0.06, 0.06];
+const FACE_Y = [-0.07, 0.05];
+
+function measureFace(vrm: VRM): FaceProfile | undefined {
+  const isSkin = (mesh: THREE.Mesh) =>
+    (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).some((m) => /SKIN/.test(m.name));
+
+  // Boca: vértices de piel que desplaza el morph de boca abierta (VRoid: *Fcl_MTH_A).
+  const mouth = new THREE.Vector3();
+  let n = 0;
+  forEachVertex(
+    vrm,
+    (mesh) => isSkin(mesh) && Object.keys(mesh.morphTargetDictionary ?? {}).some((k) => /MTH_A$/.test(k)),
+    (v, mesh, i) => {
+      const key = Object.keys(mesh.morphTargetDictionary!).find((k) => /MTH_A$/.test(k))!;
+      const morph = mesh.geometry.morphAttributes.position?.[mesh.morphTargetDictionary![key]];
+      if (!morph || Math.hypot(morph.getX(i), morph.getY(i), morph.getZ(i)) < 0.002) return;
+      mouth.add(v);
+      n++;
+    },
+  );
+  if (n === 0) return undefined;
+  mouth.multiplyScalar(1 / n);
+
+  const cols = Math.round((FACE_X[1] - FACE_X[0]) / FACE_CELL) + 1;
+  const rows = Math.round((FACE_Y[1] - FACE_Y[0]) / FACE_CELL) + 1;
+  const grid = new Array<number>(cols * rows).fill(-Infinity);
+  const cell = (x: number, y: number) => {
+    const c = Math.round((x - mouth.x - FACE_X[0]) / FACE_CELL);
+    const r = Math.round((y - mouth.y - FACE_Y[0]) / FACE_CELL);
+    return c < 0 || c >= cols || r < 0 || r >= rows ? -1 : r * cols + c;
+  };
+  // La malla de la cara es más gruesa que 5 mm: cada vértice cubre también
+  // las celdas vecinas, y los huecos que queden toman el máximo de su entorno.
+  // Sin eso había celdas vacías justo en los labios y el contacto se perdía
+  // en frames sueltos.
+  forEachVertex(vrm, isSkin, (v) => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const k = cell(v.x + dx * FACE_CELL, v.y + dy * FACE_CELL);
+        if (k >= 0) grid[k] = Math.max(grid[k], v.z);
+      }
+    }
+  });
+  for (let pass = 0; pass < 3; pass++) {
+    const prev = grid.slice();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (prev[r * cols + c] !== -Infinity) continue;
+        let best = -Infinity;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+          const rr = r + dr;
+          const cc = c + dc;
+          if (rr >= 0 && rr < rows && cc >= 0 && cc < cols) best = Math.max(best, prev[rr * cols + cc]);
+        }
+        grid[r * cols + c] = best;
+      }
+    }
+  }
+  return {
+    mouth,
+    frontZ(x, y) {
+      const k = cell(x, y);
+      return k < 0 || grid[k] === -Infinity ? NaN : grid[k];
+    },
+  };
 }
 
 function measureBody(vrm: VRM, position: (bone: string) => THREE.Vector3): BodyProfile {

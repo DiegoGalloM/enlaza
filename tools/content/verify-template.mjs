@@ -23,6 +23,7 @@ import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { appHandedness, chooseHand, videoAspect, faceFromBox } from './common.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
+import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
 
 const BUNDLE = path.join(repoRoot, 'apps', 'web', 'public', 'templates', 'lsc-bundled.json');
 // Caché de extracción en carpeta gitignorada: nada de esto se commitea.
@@ -64,8 +65,10 @@ async function framesFor(extractor, slug) {
  * Reproduce los frames de un video por el validador como si vinieran de la
  * cámara. `speed` > 1 comprime los tiempos (seña más rápida que el video).
  */
-function replay(result, speed) {
-  const side = chooseHand(result.frames);
+function replay(result, speed, signId) {
+  // Mano registrada de la seña de ESE video (la misma que usa la plantilla);
+  // el criterio automático se confunde con dos manos encimadas (A37).
+  const side = signAnimationFor(signId)?.hand ?? chooseHand(result.frames);
   const validator = new SessionValidator(targetId, template.type, bundle.templates);
   let bestScore = 0;
   let validated = false;
@@ -96,7 +99,7 @@ try {
   console.log('1. Su propio video, a distintas velocidades:');
   const own = await framesFor(extractor, target.slug);
   for (const speed of [1, 0.7, 1.4]) {
-    const { validated, bestScore } = replay(own, speed);
+    const { validated, bestScore } = replay(own, speed, targetId);
     const label = speed === 1 ? 'velocidad del video' : `${speed}× (${speed < 1 ? 'más lento' : 'más rápido'})`;
     console.log(`   ${validated ? 'VALIDA  ' : 'NO VALIDA'} ${label.padEnd(22)} mejor puntaje ${bestScore.toFixed(3)}`);
     if (!validated) failures++;
@@ -104,7 +107,7 @@ try {
 
   console.log('\n2. Las otras 9 señas de cortesía (deberían NO validar):');
   for (const other of COURTESY.filter((c) => c.signId !== targetId)) {
-    const { validated, bestScore } = replay(await framesFor(extractor, other.slug), 1);
+    const { validated, bestScore } = replay(await framesFor(extractor, other.slug), 1, other.signId);
     console.log(
       `   ${validated ? 'FALSO POSITIVO' : 'ok            '} ${other.gloss.padEnd(16)} ` +
         (bestScore > 0 ? `puntaje ${bestScore.toFixed(3)}` : 'siempre ganó otra plantilla'),
