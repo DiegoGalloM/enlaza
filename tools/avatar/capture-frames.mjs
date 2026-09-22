@@ -7,6 +7,9 @@
  *   --tiempos=0.2,0.6,1.4  en su lugar, congela la seña en esos segundos (?t=)
  *   --alto=320             alto del canvas en px (320 = panel de la lección)
  *   --escala=1             deviceScaleFactor (1 = peor caso de nitidez)
+ *   --recorte=x,y,w,h      recorta cada cuadro, en fracciones del canvas, para
+ *                          revisar de cerca la mano (p. ej. 0.3,0.5,0.5,0.45
+ *                          con --escala=3 para el puño en el pecho)
  *   ej: node tools/avatar/capture-frames.mjs http://localhost:5173/avatar-poc capturas/antes
  */
 import fs from 'node:fs';
@@ -26,6 +29,7 @@ const stepMs = Number(opt('cadaMs', 350));
 const times = opt('tiempos', null)?.split(',').map(Number);
 const height = Number(opt('alto', 320));
 const scale = Number(opt('escala', 1));
+const crop = opt('recorte', null)?.split(',').map(Number);
 
 let browser;
 for (const channel of ['msedge', 'chrome', undefined]) {
@@ -43,6 +47,15 @@ const page = await browser.newPage({
 page.on('pageerror', (e) => console.log('[pageerror]', e.message));
 fs.mkdirSync(outDir, { recursive: true });
 const file = (i) => path.join(outDir, `frame-${String(i).padStart(2, '0')}.png`);
+async function shoot(canvas, i) {
+  if (!crop) return canvas.screenshot({ path: file(i) });
+  const box = await canvas.boundingBox();
+  const [x, y, w, h] = crop;
+  return page.screenshot({
+    path: file(i),
+    clip: { x: box.x + box.width * x, y: box.y + box.height * y, width: box.width * w, height: box.height * h },
+  });
+}
 
 async function open(target) {
   await page.goto(target);
@@ -57,13 +70,13 @@ if (times) {
     target.searchParams.set('t', String(t));
     const canvas = await open(target.href);
     await page.waitForTimeout(2500); // que el pelo se asiente en la pose congelada
-    await canvas.screenshot({ path: file(i) });
+    await shoot(canvas, i);
   }
 } else {
   const canvas = await open(url);
   await page.waitForTimeout(1500);
   for (let i = 0; i < n; i++) {
-    await canvas.screenshot({ path: file(i) });
+    await shoot(canvas, i);
     await page.waitForTimeout(stepMs);
   }
 }

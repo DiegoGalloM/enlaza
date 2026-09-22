@@ -113,6 +113,7 @@ export function SignAvatar({
         const player = createSignPlayer(scene.vrm, scene.rig, landmarks, {
           window: animation.window,
           face: animation.face,
+          handshape: animation.handshape,
         });
         canvas.dataset.duration = player.duration.toFixed(3);
         // Gancho de revisión en desarrollo (como __enlazaFakeDetector): permite

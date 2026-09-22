@@ -184,6 +184,8 @@ Primera seña después de Hola. El objetivo era repetir el proceso tal cual, per
 
 ## Receta para una seña nueva
 
+> **Versión vigente:** la skill `.claude/skills/avatar-sena/SKILL.md` (sexta iteración). Agrega la configuración manual, la lista de control de calidad y la tabla de problemas ya resueltos. Esta sección conserva los pasos originales y los comandos de la plantilla de reconocimiento (pasos 5 y 6).
+
 Es el proceso seguido con Por favor. Hay que cambiar el slug, el `signId` y los tiempos.
 
 1. **Ver la seña:** `node tools/avatar/video-sheet.mjs content/ical-2026-09/<slug>.mp4 hoja.png --cada=0.1`. Para acercar la mano: `--recorte=x,y,w,h --desde --hasta --ancho`. Decidir el tramo que es la seña (sin preparación ni regreso a reposo) y anotar qué se ve: mano dominante, configuración, contacto, movimiento, gestos no manuales.
@@ -262,7 +264,7 @@ La cara de súplica de Por favor es parte de la seña (A20) y el avatar la hací
 
 ## A27. Expresión de la cara registrada por seña, no extraída del video
 **Qué:** `animations.ts` registra por seña una expresión (`face`) como pesos de los morphs de cara del modelo VRoid (`Fcl_BRW_*`, `Fcl_EYE_*`, `Fcl_MTH_*`). `face.ts` la registra como una expresión VRM propia y el reproductor la aplica con el mismo peso de mezcla que los huesos, así que entra gradual al cargar (A24).
-- **Por favor:** cejas levantadas por dentro y juntas (`BRW_Sorrow` 0.8 + `BRW_Angry` 0.3), ojos entrecerrados (`EYE_Sorrow` 0.6), labios apretados en puchero (`MTH_Angry` 0.6 + `MTH_Small` 0.4).
+- **Por favor:** cejas levantadas por dentro y juntas (`BRW_Sorrow` 0.8 + `BRW_Angry` 0.3), ojos entrecerrados (`EYE_Sorrow` 0.6), labios apretados en puchero (`MTH_Angry` 0.6 + `MTH_Small` 0.4). *Reemplazada por la sonrisa de Hola en A29.*
 - **Hola:** sonrisa abierta (`MTH_Joy` 0.5, `EYE_Joy` 0.35, `BRW_Joy` 0.5).
 
 **Por qué no se extrae:** fue lo primero que se probó. Holistic entrega los 52 coeficientes de ARKit (`outputFaceBlendshapes`). En el video de Por favor, medidos:
@@ -284,3 +286,85 @@ La cabeza inclinada y los lentes probablemente confunden al modelo. Con una sola
 ## Verificación de la cuarta iteración
 - **Pruebas:** `avatar-face.test.ts` (parpadeo solo en el regreso, cierre completo, ciclos alternos; `returnStartFrame` del clip).
 - **Receta:** el paso 1 de la receta ya pide anotar los gestos no manuales; ahora se registran en `face` (paso 3).
+
+---
+
+# Quinta iteración: pulido de Por favor (2026-09-21)
+
+Pedido: que Por favor no se vea triste, sino con la misma cara que Hola, y que deje de atravesarse a sí misma (brazo dentro de la camiseta, pelo a través del puño).
+
+![Antes (arriba) y después (abajo): de frente a 0.1 y 0.9 s, y en tres cuartos](img/avatar-por-favor-pulido-antes-despues.png)
+
+## A29. Por favor con la sonrisa de Hola, no con la cara de súplica
+**Qué:** `face` de Por favor pasa a los mismos pesos que Hola (`MTH_Joy` 0.5, `EYE_Joy` 0.35, `BRW_Joy` 0.5).
+**Por qué:** la súplica de A27 (cejas de tristeza, ojos entrecerrados, puchero) describe el video, pero en este modelo, junto con la cabeza inclinada, se leía como tristeza y no como cortesía. Se compararon cuatro variantes con la cara de Hola al lado: la misma sonrisa de Hola, sonrisa cerrada (`MTH_Fun`), sonrisa cerrada con cejas levantadas por dentro, y una mezcla. Se eligió la misma de Hola para que las dos señas de cortesía tengan una cara coherente.
+**Pendiente:** confirmar con ICAL si el gesto no manual de súplica es obligatorio en la seña. Si lo es, conviene buscar una versión suave (cejas levantadas por dentro con sonrisa) en vez del puchero.
+
+## A30. Colisión de todo el brazo: giro del codo antes que adelantar la mano
+**Qué:** `solveArmClearance` (retarget.ts) reemplaza el empuje de la mano de A14. Prueba puntos del brazo (último cuarto), del antebrazo y de la mano contra la silueta medida, y busca dos correcciones: girar el codo alrededor del eje hombro–muñeca (la mano no se mueve) y adelantar la muñeca. Elige la de menor costo entre penetración y distancia a la pose observada. La búsqueda es en rejilla gruesa y luego fina.
+**Por qué:** A14 solo probaba la mano. En Por favor (puño en el pecho del lado contrario) el codo quedaba **12 cm dentro del torso**, medido con la silueta, y el antebrazo salía de la camiseta. Adelantar la mano no lo arreglaba sin despegar el puño del pecho. Girar el codo sí lo arregla y deja el contacto intacto, por eso cuesta menos.
+**Tropiezos medidos:**
+- Con el giro barato y el brazo probado desde su mitad, el óptimo subía el codo a la altura del hombro (codo de "ala de pollo"). La mitad del brazo junto al hombro está siempre "dentro" de la camisa holgada, también en reposo. Ahora solo se prueba el último cuarto, y el giro cuesta 5× más.
+- `bodyPenetration` mide la profundidad dentro de la elipse sin suponer que la salida es por el frente, como hacía `forwardPushOut` (que se eliminó). Si no, un codo que sale por el costado se veía como si siguiera adentro.
+
+**Resultado:** penetración máxima del brazo en el ciclo de 0.12 m a ≤ 0.011 m, que es el roce de la manga con el costado. Hola no cambia a simple vista (se revisó a 0.3, 0.8 y 1.3 s).
+
+## A31. La mano se prueba con sus dedos reales, y el pelo choca con toda la mano
+**Qué:**
+- Los dedos se retargetean antes que el brazo. Su pose no depende del codo, porque la mano termina con la orientación observada. La colisión prueba nudillos, articulaciones y yemas donde de verdad quedan, con 1.2 cm de holgura; la muñeca conserva 2.5 cm.
+- Se agregan esferas de colisión del pelo en palma, nudillos y dedo medio de cada mano (`handColliders` en rig.ts). El modelo solo traía una esfera de 3 cm en la muñeca.
+
+**Por qué:** la prueba de A14 suponía los dedos extendidos al frente. En un puño apuntan hacia el pecho, así que los dedos se metían en la camisa y en el mechón largo del frente, que parecía pasar por en medio del puño. Con 2.5 cm de holgura en los dedos el puño quedaba flotando frente al pecho; con 1.2 cm las yemas quedan apoyadas sobre el mechón, que pasa por detrás del puño como pasaría en una persona.
+
+## Verificación de la quinta iteración
+- **Pruebas:** `avatar-retarget.test.ts` reemplaza las de `forwardPushOut` por `bodyPenetration` y agrega `solveArmClearance`: saca el antebrazo del torso sin mover la mano, adelanta la mano si sus puntos están adentro y no toca un brazo que ya está afuera. Las 21 pruebas de avatar pasan; `tsc -b` y `oxlint` sin errores nuevos.
+- **Suavidad** (`measure-smoothness`), aceleración máxima en rad/s²:
+  - Por favor: brazo 48 (antes 70), antebrazo 54 (antes 42), muñeca 243 (antes 237), dedos ≤ 142. Sin tirones aislados.
+  - Hola: igual que en A18 (brazo 149).
+
+---
+
+# Sexta iteración: Por favor natural y receta para las demás señas (2026-09-22)
+
+Pedido: el puño no se veía cerrado y el movimiento todavía no parecía natural. Además, que todo lo aprendido quede documentado para hacer las señas siguientes sin rehacerlo. La receta vigente quedó en la skill `.claude/skills/avatar-sena/SKILL.md`.
+
+![Video (izquierda), avatar antes de esta iteración (centro) y ahora (derecha)](img/avatar-por-favor-puno.png)
+
+## A32. Configuración manual registrada por seña (puño) y pulgar del puño
+**Qué:**
+- `animations.ts` acepta `handshape: { right: 'puño' }`. `HANDSHAPE_FLEX` (retarget.ts) fija la flexión de los cuatro dedos (base 1.5, media 1.75, distal 1.05 rad) con abducción cero, en lugar de la observada.
+- Con configuración registrada, el pulgar va al costado del índice, a la altura de su falange media (configuración A, la del video), con IK sobre sus tres falanges (`handshapeThumbTarget`).
+
+**Por qué:** en un puño contra el pecho los dedos quedan ocultos. MediaPipe los daba a medio doblar y el avatar mostraba un gancho abierto. El pulgar salía levantado, porque en el puño su yema queda lejos de las articulaciones que usa la preservación de contacto (A22). Igual que el tramo y la cara, la configuración es una decisión lingüística: se registra con un comentario de qué se ve en el video y se revisa con ICAL.
+**Descartado:** mezclar lo observado con el puño. La detección de dedos ocultos no aporta información, solo ruido.
+
+## A33. El hombro acompaña al brazo que cruza el cuerpo
+**Qué:** `shoulderGirdle` gira el hueso del hombro hacia el frente (hasta 25°) y hacia abajo (hasta 10°), según cuánto cruza la mano al lado contrario (de 5 a 20 cm desde el hombro, con `smoothstep`). El IK parte del hombro desplazado. El objetivo de la mano no cambia, así que el contacto se conserva.
+**Por qué:** con el hombro fijo, el avatar no tenía alcance para bajar el codo sin meterlo en el torso. `solveArmClearance` lo resolvía subiendo el codo, y el antebrazo quedaba horizontal. En el video el codo cuelga y el antebrazo sube en diagonal, porque una persona adelanta el hombro al llevar la mano al pecho contrario. Barrido medido (inclinación del antebrazo):
+
+| Adelantamiento / descenso | 0° / 0° | 10° / 10° | 20° / 10° | 30° / 10° |
+|---|---|---|---|---|
+| Antebrazo | 11° | 20° | 24° | 30° |
+
+Se eligió 25° / 10°, dentro del rango anatómico de la clavícula. Hola no cruza el cuerpo y no cambia.
+**Efecto en el pelo:** con el codo más bajo, el mechón derecho atravesaba el codo. Por eso la holgura del antebrazo pasa de 3 a 4 cm (espacio para el mechón entre el antebrazo y el pecho) y la cápsula del antebrazo para el pelo se engrosa 1.4×. Ahora el mechón cae limpio sobre el antebrazo.
+
+## A34. Respiración y colliders que de verdad siguen al cuerpo
+**Qué:**
+- El pecho (`upperChest`) se inclina hasta 0.7° con un ciclo de 3.6 s (`breathing`). Depende del tiempo absoluto, no del ciclo de la seña: no salta al repetir, y con `?t=` queda fijo.
+- **Bug corregido:** `addHairColliders` llama a `manager.addJoint(first)` al final.
+
+**Por qué:**
+- Con todo el torso inmóvil, el avatar se veía como maniquí aunque las manos se movieran bien.
+- Al verificar que los colliders del torso siguieran la respiración, se midió que **no se movían**. three-vrm solo actualiza cada frame la matriz de los colliders que existían cuando ordenó las articulaciones, al cargar. Los agregados después quedaban congelados en la pose de reposo. Las esferas de mano de A31 se habían quedado en la T-pose, a los lados del cuerpo, y no hacían nada: lo que había mejorado el pelo en A31 era haber adelantado la mano. `addJoint` con una articulación existente es idempotente y marca el orden como sucio. Medido después del cambio: la esfera de la palma queda a 3 cm de la muñeca y se mueve con ella.
+
+## Herramientas nuevas
+- `tools/avatar/check-contacts.mjs "<url>" [--lado=] [--cada=]`: penetración del brazo y del antebrazo en el cuerpo por instante, con las holguras del retargeting. Por favor: máximo 0.000 m (antes de A30, 0.12 m).
+- `capture-frames.mjs --recorte=x,y,w,h`: recorta en fracciones del canvas, para revisar la mano de cerca con `--escala=3`.
+
+## Verificación de la sexta iteración
+- **Pruebas:** 25 de avatar (nuevas: `shoulderGirdle` y `breathing`). `tsc -b` y `oxlint` sin errores.
+- **Suavidad**, aceleración máxima en rad/s²:
+  - Por favor: brazo 119, antebrazo 39, muñeca 241, pulgar ≤ 132. Los dedos largos quedan en 0 porque el puño es fijo.
+  - Hola: igual que antes (brazo 149).
+- **Visual:** frente, ±45°, ±70° y diez cuadros en movimiento. Puño cerrado con el pulgar al costado del índice, antebrazo en diagonal, mechón sobre el antebrazo y detrás del puño, sin cruces. Hola: igual a 0.3, 0.8 y 1.3 s.

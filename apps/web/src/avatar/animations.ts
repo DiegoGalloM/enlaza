@@ -10,6 +10,7 @@
  * sin animación no dispare un 404 en cada lección.
  */
 import type { FaceExpression } from './face';
+import type { Handshape } from './retarget';
 
 export interface SignAnimation {
   /** Glosa, solo para pantallas de revisión (la lección usa la del catálogo). */
@@ -28,6 +29,12 @@ export interface SignAnimation {
    * porque MediaPipe no la captaba (A27). Se revisa con ICAL igual que el tramo.
    */
   face?: FaceExpression;
+  /**
+   * Configuración manual por mano, cuando la detección no la capta (dedos
+   * ocultos, p. ej. un puño contra el pecho). Describe lo que se ve en el
+   * video, como `face`, y se revisa con ICAL (A32).
+   */
+  handshape?: { left?: Handshape; right?: Handshape };
 }
 
 const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
@@ -46,21 +53,18 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
   // círculos pequeños (0.37–2.03 s en el video). Antes la mano sube desde el
   // reposo y después se retira y las manos se entrelazan: nada de eso es la
   // seña. El tramo es solo el contacto, así el bucle repite los círculos sin
-  // despegar la mano del pecho. La cabeza inclinada y el gesto de súplica
-  // también son parte de la seña. Cara de súplica durante el contacto: cejas
-  // levantadas por dentro y juntas, ojos entrecerrados y labios apretados en
-  // puchero. Al retirar la mano (después del tramo) sonríe, y eso no es la seña.
+  // despegar la mano del pecho. La cabeza inclinada es parte de la seña.
+  // Cara: la misma sonrisa que Hola. Primero se registró la cara de súplica
+  // del video (cejas de tristeza, puchero), pero en el avatar se leía como
+  // tristeza, no como cortesía (A29); queda pendiente revisarlo con ICAL.
+  // Mano: puño cerrado (dedos ocultos contra el pecho; MediaPipe los daba a
+  // medio doblar, A32).
   'lsc-cortesia-4': {
     gloss: 'Por favor',
     url: '/avatar/por-favor.landmarks.json',
     window: [0.37, 2.06],
-    face: {
-      Fcl_BRW_Sorrow: 0.8,
-      Fcl_BRW_Angry: 0.3,
-      Fcl_EYE_Sorrow: 0.6,
-      Fcl_MTH_Angry: 0.6,
-      Fcl_MTH_Small: 0.4,
-    },
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+    handshape: { right: 'puño' },
   },
 };
 

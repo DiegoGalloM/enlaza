@@ -4,6 +4,7 @@ import {
   VRMSpringBoneCollider,
   VRMSpringBoneColliderShapeSphere,
   type VRM,
+  type VRMHumanBoneName,
   type VRMSpringBoneColliderGroup,
 } from '@pixiv/three-vrm';
 
@@ -164,6 +165,12 @@ function measureBody(vrm: VRM, position: (bone: string) => THREE.Vector3): BodyP
 
 const SLEEVE_SCALE = 1.8;
 /**
+ * El antebrazo del modelo tiene una cápsula de 2.9 cm para el pelo, justo su
+ * radio: los segmentos del mechón (de ~10 cm, solo se corrige la punta) lo
+ * cruzaban cuando el antebrazo pasa por delante del pecho.
+ */
+const FOREARM_HAIR_SCALE = 1.4;
+/**
  * Gravedad de los mechones largos. El modelo trae 0.1 en el pelo de atrás y 0
  * en los dos mechones del frente, con rigidez 0.5: el mechón conserva su forma
  * respecto a la cabeza, y cuando la seña inclina la cabeza (Por favor) giraba
@@ -183,20 +190,19 @@ const SLEEVE_SCALED = new WeakSet<object>();
 const ARM_BONE = /Arm|Hand|Thumb|Index|Middle|Ring|Little/;
 
 /**
- * Cuánto hay que mover `p` hacia el frente (+z) para que quede fuera del
- * cuerpo con `margin` de holgura. 0 si ya está afuera.
+ * Cuánto está `p` dentro del cuerpo (0 si afuera), en metros aproximados: la
+ * fracción de radio que le falta para salir de la elipse de su franja, por el
+ * semieje menor. No supone que se sale por el frente, así que sirve para
+ * comparar poses en las que el codo sale por el costado.
  */
-export function forwardPushOut(body: BodyProfile, p: THREE.Vector3, margin: number): number {
+export function bodyPenetration(body: BodyProfile, p: THREE.Vector3, margin: number): number {
   const bin = Math.floor((p.y - body.minY) / body.step);
   const hw = body.halfWidth[bin] + margin;
   const hd = body.halfDepth[bin] + margin;
   const cz = body.centerZ[bin];
   if (!(hw > margin) || Number.isNaN(cz)) return 0;
-  const nx = p.x / hw;
-  if (Math.abs(nx) >= 1) return 0;
-  const front = cz + hd * Math.sqrt(1 - nx * nx);
-  const back = cz - hd * Math.sqrt(1 - nx * nx);
-  return p.z < front && p.z > back ? front - p.z : 0;
+  const r = Math.hypot(p.x / hw, (p.z - cz) / hd);
+  return r < 1 ? (1 - r) * Math.min(hw, hd) : 0;
 }
 
 /**
@@ -241,21 +247,23 @@ export function addHairColliders(vrm: VRM, rig: AvatarRig): number {
         });
         const collider = new VRMSpringBoneCollider(shape);
         anchor.add(collider);
-        collider.updateWorldMatrix(true, false); // el torso no se anima: basta una vez
         colliders.push(collider);
       }
     }
   }
 
   // Las mangas de la camisa son más holgadas que las cápsulas de brazo del
-  // modelo: se engrosan para el pelo (solo el pelo usa esos grupos).
+  // modelo, y el antebrazo cruza el mechón: se engrosan para el pelo (solo el
+  // pelo usa esos grupos).
   for (const joint of manager.joints) {
     if (!/hair/i.test(joint.bone.name)) continue;
     for (const g of joint.colliderGroups) {
       for (const c of g.colliders) {
         const shape = c.shape as { radius?: number };
-        if (/UpperArm/.test(c.parent?.name ?? '') && shape.radius && !SLEEVE_SCALED.has(c)) {
-          shape.radius *= SLEEVE_SCALE;
+        const parent = c.parent?.name ?? '';
+        const scale = /UpperArm/.test(parent) ? SLEEVE_SCALE : /LowerArm/.test(parent) ? FOREARM_HAIR_SCALE : 1;
+        if (scale !== 1 && shape.radius && !SLEEVE_SCALED.has(c)) {
+          shape.radius *= scale;
           SLEEVE_SCALED.add(c);
         }
       }
@@ -270,9 +278,54 @@ export function addHairColliders(vrm: VRM, rig: AvatarRig): number {
       joint.settings.gravityPower = Math.max(joint.settings.gravityPower, LONG_HAIR_GRAVITY);
     }
   }
-  const group: VRMSpringBoneColliderGroup = { name: 'enlaza-torso', colliders };
+  const groups: VRMSpringBoneColliderGroup[] = [
+    { name: 'enlaza-torso', colliders },
+    { name: 'enlaza-manos', colliders: handColliders(vrm, rig) },
+  ];
   for (const joint of manager.joints) {
-    if (/hair/i.test(joint.bone.name)) joint.colliderGroups.push(group);
+    if (/hair/i.test(joint.bone.name)) joint.colliderGroups.push(...groups);
   }
+  // three-vrm solo actualiza cada frame la matriz de los colliders que ya
+  // existían cuando ordenó las articulaciones (al cargar). Los agregados aquí
+  // quedaban congelados en la pose de reposo: las esferas de mano se quedaban
+  // en la T-pose y las del torso no seguían la respiración. Volver a agregar
+  // una articulación existente (addJoint es idempotente) fuerza a reordenar.
+  const [first] = manager.joints;
+  if (first) manager.addJoint(first);
   return colliders.length;
+}
+
+/**
+ * Esferas de mano para el pelo: palma, nudillos y dedos. El modelo solo trae
+ * una esfera de 3 cm en la muñeca, así que el resto de la mano atravesaba el
+ * pelo; en Por favor el mechón largo del frente pasaba por en medio del puño
+ * apoyado en el pecho. Cuelgan de los huesos crudos, así que siguen la mano y
+ * la flexión de los dedos.
+ */
+function handColliders(vrm: VRM, rig: AvatarRig): VRMSpringBoneCollider[] {
+  const spheres: [string, string, number, number][] = [
+    // [hueso ancla, hueso hacia el que se desplaza, fracción, radio]
+    ['Hand', 'MiddleProximal', 0.55, 0.035],
+    ['IndexProximal', 'IndexProximal', 0, 0.02],
+    ['MiddleProximal', 'MiddleIntermediate', 0.5, 0.02],
+    ['LittleProximal', 'LittleProximal', 0, 0.02],
+    ['MiddleIntermediate', 'MiddleIntermediate', 0, 0.018],
+  ];
+  const colliders: VRMSpringBoneCollider[] = [];
+  for (const side of ['left', 'right'] as const) {
+    for (const [anchorBone, towardBone, fraction, radius] of spheres) {
+      const anchor = vrm.humanoid.getRawBoneNode(`${side}${anchorBone}` as VRMHumanBoneName);
+      if (!anchor) continue;
+      anchor.updateWorldMatrix(true, false);
+      const at = rig
+        .position(`${side}${anchorBone}`)
+        .clone()
+        .lerp(rig.position(`${side}${towardBone}`), fraction);
+      const shape = new VRMSpringBoneColliderShapeSphere({ radius, offset: anchor.worldToLocal(at) });
+      const collider = new VRMSpringBoneCollider(shape);
+      anchor.add(collider);
+      colliders.push(collider);
+    }
+  }
+  return colliders;
 }

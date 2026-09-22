@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import { cleanAnimation, DEFAULT_CLEANUP, type RawTrack } from './cleanup';
-import { forwardPushOut, type AvatarRig } from './rig';
+import { bodyPenetration, type AvatarRig, type BodyProfile } from './rig';
 import { blinkWeight, createSignFace, type FaceExpression } from './face';
 
 /**
@@ -23,8 +23,9 @@ import { blinkWeight, createSignFace, type FaceExpression } from './face';
  *   brazo, resuelta con IK de dos huesos usando el codo de la persona como
  *   polo. Copiar solo direcciones metía las manos en la cara o el vientre
  *   porque el avatar no tiene las proporciones de la persona.
- * - Colisión: la mano se empuja hacia el frente si queda dentro del volumen
- *   medido del torso o la cabeza.
+ * - Colisión: si brazo, antebrazo o dedos quedan dentro del volumen medido
+ *   del torso o la cabeza, se gira el codo alrededor del eje hombro–muñeca y,
+ *   si no basta, se adelanta la mano (solveArmClearance).
  * - Giro del antebrazo: se reparte mitad en el antebrazo y mitad en la muñeca,
  *   en vez de cargarlo todo en la muñeca (que se torcía como envoltura).
  * - Dedos: dirección real de cada falange con límites anatómicos (flexión,
@@ -94,6 +95,25 @@ const FINGER_LIMITS = {
   Distal: { flex: [0, 1.4], abduction: 0 },
 } as const;
 const THUMB_MAX_SWING = 1.1;
+
+/**
+ * Configuraciones manuales que se REGISTRAN por seña (animations.ts) cuando
+ * MediaPipe no las capta. En un puño apoyado en el pecho los dedos quedan
+ * ocultos contra la palma y el cuerpo: la detección los da a medio doblar y el
+ * avatar mostraba un gancho abierto en vez de un puño (Por favor, A32). Igual
+ * que el tramo y la cara, qué configuración lleva la seña es una decisión
+ * lingüística y se revisa con ICAL.
+ *
+ * Cada una fija la flexión [base, media, distal] de los cuatro dedos largos,
+ * en radianes, con abducción cero. El pulgar sigue lo observado (su posición
+ * distingue, p. ej., A de S) y el contacto con los dedos se preserva igual.
+ */
+export type Handshape = 'puño';
+const HANDSHAPE_FLEX: Record<Handshape, [number, number, number]> = {
+  // Dentro de FINGER_LIMITS: base ~85°, media ~100°, distal ~60°. Más que eso
+  // mete las yemas en la palma de este modelo.
+  puño: [1.5, 1.75, 1.05],
+};
 /**
  * Contacto del pulgar: si en el video la punta del pulgar está a menos de esta
  * fracción del largo de la mano de alguna articulación de los dedos, se
@@ -126,6 +146,8 @@ export interface RetargetContext {
   rig: AvatarRig;
   /** Largo de brazo del avatar / largo de brazo de la persona, por lado. */
   armScale: Record<Side, number>;
+  /** Configuración manual registrada por mano, si la seña la fija. */
+  handshape?: Partial<Record<Side, Handshape>>;
 }
 
 const toThree = (p: number[]) => new THREE.Vector3(p[0], -p[1], -p[2]);
@@ -225,6 +247,139 @@ export function solveTwoBoneIK(
   return { elbow, wrist: shoulder.clone().addScaledVector(dir, reach) };
 }
 
+/**
+ * Holgura de nudillos y yemas: el radio de un dedo (~1 cm) y un poco más. Con
+ * la de la muñeca (2.5 cm) el puño de Por favor quedaba flotando frente al pecho.
+ */
+const FINGER_MARGIN = 0.012;
+/**
+ * Holgura del antebrazo con el cuerpo: su radio en el modelo (~3 cm) más ~1 cm
+ * para el mechón del frente, que queda entre el antebrazo y el pecho cuando el
+ * brazo cruza (Por favor). Con 3 cm el mechón atravesaba el codo.
+ */
+const FOREARM_MARGIN = 0.04;
+/**
+ * Holgura del brazo: menor que su radio porque junto al costado la manga y la
+ * camisa holgadas se enciman también en reposo; lo que se evita es que el
+ * codo quede metido en el torso.
+ */
+const UPPER_ARM_MARGIN = 0.015;
+/** Tramo del brazo que se prueba: cerca del hombro siempre está "dentro". */
+const UPPER_ARM_SAMPLES = [0.75, 1];
+const FOREARM_SAMPLES = [0.2, 0.4, 0.6, 0.8, 1];
+/**
+ * Sin detección de mano no hay dedos: muñeca, nudillos y mitad de los dedos
+ * extendidos, en largos de mano.
+ */
+const HAND_SAMPLES_WITHOUT_FINGERS = [0, 1, 1.8];
+/**
+ * Costo de alejarse de lo observado frente al de atravesar el cuerpo. Girar
+ * el codo alrededor del eje hombro–muñeca no cambia dónde está la mano, así
+ * que es lo primero que se usa; adelantar la mano la despega del contacto
+ * (el puño de Por favor sobre el pecho) y cuesta más.
+ */
+const PENETRATION_COST = 1000;
+const SWIVEL_COST = 0.05;
+const PUSH_COST = 20;
+const MAX_SWIVEL = Math.PI / 2;
+const MAX_PUSH = 0.06;
+
+/**
+ * IK del brazo sin atravesar el cuerpo. `handPoints` son puntos de la mano
+ * relativos a la muñeca (ya orientados). Antes solo se probaba la mano y se
+ * adelantaba; el codo quedaba libre y en Por favor (puño en el pecho con el
+ * codo al costado) quedaba 12 cm dentro del torso, con el antebrazo saliendo
+ * de la camisa. Se buscan dos correcciones a la vez: girar el codo alrededor
+ * del eje hombro–muñeca (la mano no se mueve) y adelantar la muñeca, con el
+ * menor costo total entre penetración y distancia a la pose observada.
+ * Búsqueda en rejilla gruesa y luego fina: son dos parámetros acotados y
+ * evita los mínimos locales de un descenso.
+ */
+export function solveArmClearance(
+  body: BodyProfile,
+  shoulder: THREE.Vector3,
+  target: THREE.Vector3,
+  l1: number,
+  l2: number,
+  pole: THREE.Vector3,
+  handPoints: THREE.Vector3[],
+): { elbow: THREE.Vector3; wrist: THREE.Vector3 } {
+  const axis = target.clone().sub(shoulder).normalize();
+  const solve = (swivel: number, push: number) => {
+    const t = target.clone();
+    t.z += push;
+    const p = pole.clone().applyAxisAngle(axis, swivel);
+    return solveTwoBoneIK(shoulder, t, l1, l2, p);
+  };
+  const penetration = ({ elbow, wrist }: { elbow: THREE.Vector3; wrist: THREE.Vector3 }) => {
+    let sum = 0;
+    const add = (point: THREE.Vector3, margin: number) => {
+      sum += bodyPenetration(body, point, margin) ** 2;
+    };
+    for (const s of UPPER_ARM_SAMPLES) add(shoulder.clone().lerp(elbow, s), UPPER_ARM_MARGIN);
+    for (const s of FOREARM_SAMPLES) add(elbow.clone().lerp(wrist, s), FOREARM_MARGIN);
+    // El primer punto es la muñeca; el resto, dedos, que son más delgados.
+    handPoints.forEach((offset, i) => add(wrist.clone().add(offset), i === 0 ? BODY_MARGIN : FINGER_MARGIN));
+    return sum;
+  };
+  const cost = (swivel: number, push: number) =>
+    PENETRATION_COST * penetration(solve(swivel, push)) + SWIVEL_COST * swivel ** 2 + PUSH_COST * push ** 2;
+
+  if (penetration(solve(0, 0)) === 0) return solve(0, 0);
+  let best = { swivel: 0, push: 0, cost: cost(0, 0) };
+  const search = (swivels: number[], pushes: number[]) => {
+    for (const swivel of swivels) {
+      for (const push of pushes) {
+        const c = cost(swivel, push);
+        if (c < best.cost) best = { swivel, push, cost: c };
+      }
+    }
+  };
+  const range = (from: number, to: number, step: number) => {
+    const out: number[] = [];
+    for (let x = from; x <= to + 1e-9; x += step) out.push(x);
+    return out;
+  };
+  const coarse = MAX_SWIVEL / 18;
+  search(range(-MAX_SWIVEL, MAX_SWIVEL, coarse), range(0, MAX_PUSH, 0.005));
+  const { swivel, push } = best;
+  search(
+    range(Math.max(swivel - coarse, -MAX_SWIVEL), Math.min(swivel + coarse, MAX_SWIVEL), coarse / 10),
+    range(Math.max(push - 0.005, 0), Math.min(push + 0.005, MAX_PUSH), 0.0005),
+  );
+  return solve(best.swivel, best.push);
+}
+
+/**
+ * Adelantamiento máximo del hombro (giro de la clavícula hacia el frente) y
+ * cuánto baja con él. Una persona que lleva la mano al pecho del lado
+ * contrario adelanta el hombro; sin eso, en el avatar el alcance no daba para
+ * bajar el codo y el antebrazo quedaba horizontal con el codo alto, cuando en
+ * el video de Por favor cuelga y el antebrazo sube en diagonal (A33).
+ * Medido: con 25° y 10° el antebrazo pasa de 11° a ~25° de inclinación.
+ */
+const MAX_PROTRACTION = THREE.MathUtils.degToRad(25);
+const MAX_DEPRESSION = THREE.MathUtils.degToRad(10);
+/** Cuánto cruza la mano hacia el otro lado, desde el hombro, para empezar y para el máximo. */
+const CROSS_START = 0.05;
+const CROSS_FULL = 0.2;
+
+/**
+ * Rotación del hueso del hombro (clavícula) según cuánto cruza la mano hacia
+ * el lado contrario, medido desde la articulación del hombro. Mano de su lado
+ * (Hola, en la frente): casi nada.
+ */
+export function shoulderGirdle(side: Side, restShoulder: THREE.Vector3, target: THREE.Vector3): THREE.Quaternion {
+  const toward = side === 'right' ? 1 : -1; // el lado contrario está hacia +x para el brazo derecho
+  const cross = (target.x - restShoulder.x) * toward;
+  const amount = smoothstep((cross - CROSS_START) / (CROSS_FULL - CROSS_START));
+  if (amount <= 0) return new THREE.Quaternion();
+  // Brazo derecho en reposo hacia -x: girar en +y lo adelanta, en +z lo baja.
+  const forward = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), toward * MAX_PROTRACTION * amount);
+  const down = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), toward * MAX_DEPRESSION * amount);
+  return forward.multiply(down);
+}
+
 function retargetArm(
   frame: LandmarkFrame,
   side: Side,
@@ -237,36 +392,37 @@ function retargetArm(
   const wrist = poseLandmark(frame, POSE[`${side}Wrist`]);
   if (!shoulder || !elbow || !wrist) return;
 
-  const S = rig.position(`${side}UpperArm`);
-  const l1 = S.distanceTo(rig.position(`${side}LowerArm`));
+  const restS = rig.position(`${side}UpperArm`);
+  const l1 = restS.distanceTo(rig.position(`${side}LowerArm`));
   const l2 = rig.position(`${side}LowerArm`).distanceTo(rig.position(`${side}Hand`));
   const scale = ctx.armScale[side];
   const qHandObserved = handWorldRotation(frame, side, rig);
 
-  // Objetivo de muñeca en el espacio del avatar, relativo a su hombro.
-  const target = S.clone().addScaledVector(wrist.clone().sub(shoulder), scale);
-  const pole = elbow.clone().sub(shoulder).multiplyScalar(scale).add(S).sub(target);
+  // Objetivo de muñeca en el espacio del avatar, relativo a su hombro en reposo.
+  const target = restS.clone().addScaledVector(wrist.clone().sub(shoulder), scale);
+  const pole = elbow.clone().sub(shoulder).multiplyScalar(scale).add(restS).sub(target);
 
-  // Colisión: se prueban muñeca, base de los dedos y mitad de los dedos. Si
-  // alguno queda dentro del cuerpo, la mano completa se adelanta.
-  const restForward = rig.direction(`${side}Hand`);
-  const handLength = rig.position(`${side}Hand`).distanceTo(rig.position(`${side}MiddleProximal`));
-  const forward = qHandObserved
-    ? restForward.clone().applyQuaternion(qHandObserved)
-    : wrist.clone().sub(elbow).normalize();
-  let push = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    const { wrist: reached } = solveTwoBoneIK(S, target, l1, l2, pole);
-    push = 0;
-    for (const k of [0, 1, 1.8]) {
-      const p = reached.clone().addScaledVector(forward, handLength * k);
-      push = Math.max(push, forwardPushOut(rig.body, p, BODY_MARGIN));
-    }
-    if (push === 0) break;
-    target.z += push;
+  // La clavícula acompaña al brazo que cruza el cuerpo (ver shoulderGirdle): el
+  // hombro se adelanta y el IK parte de ahí, sin mover el objetivo de la mano.
+  const qShoulder = shoulderGirdle(side, restS, target);
+  const girdle = rig.position(`${side}Shoulder`);
+  const S = restS.clone().sub(girdle).applyQuaternion(qShoulder).add(girdle);
+  out.set(`${side}Shoulder`, qShoulder);
+
+  // Colisión de brazo y mano con el cuerpo (ver solveArmClearance). Los dedos
+  // se resuelven antes que el brazo porque no dependen de él (la mano termina
+  // con la orientación observada, sea cual sea el codo), y así se prueban
+  // donde de verdad quedan: en un puño apuntan hacia el pecho, no al frente.
+  let handPoints: THREE.Vector3[];
+  if (qHandObserved) {
+    retargetFingers(frame, side, qHandObserved, rig, out, ctx.handshape?.[side]);
+    handPoints = handSurfacePoints(rig, side, out).map((p) => p.applyQuaternion(qHandObserved));
+  } else {
+    const forward = wrist.clone().sub(elbow).normalize();
+    const handLength = rig.position(`${side}Hand`).distanceTo(rig.position(`${side}MiddleProximal`));
+    handPoints = HAND_SAMPLES_WITHOUT_FINGERS.map((k) => forward.clone().multiplyScalar(handLength * k));
   }
-
-  const ik = solveTwoBoneIK(S, target, l1, l2, pole);
+  const ik = solveArmClearance(rig.body, S, target, l1, l2, pole, handPoints);
   const dUpper = ik.elbow.clone().sub(S).normalize();
   const dLower = ik.wrist.clone().sub(ik.elbow).normalize();
 
@@ -283,7 +439,8 @@ function retargetArm(
     const qPlane = quatFromBases([restUpper, new THREE.Vector3(0, 0, 1)], [dUpper, bendDir]);
     qUpper = qSwing.clone().slerp(qPlane, smoothstep((bendAngle - 0.15) / 0.35));
   }
-  out.set(`${side}UpperArm`, qUpper);
+  // qUpper es la orientación en el mundo; el hueso es hijo del hombro.
+  out.set(`${side}UpperArm`, qShoulder.clone().invert().multiply(qUpper));
 
   const restLower = rig.direction(`${side}LowerArm`);
   const qElbow = new THREE.Quaternion().setFromUnitVectors(
@@ -302,8 +459,20 @@ function retargetArm(
   const forearmTwist = new THREE.Quaternion().slerp(twist, FOREARM_TWIST_SHARE);
   out.set(`${side}LowerArm`, qElbow.clone().multiply(forearmTwist));
   out.set(`${side}Hand`, forearmTwist.clone().invert().multiply(qWrist));
+}
 
-  retargetFingers(frame, side, qHandObserved, rig, out);
+/**
+ * Puntos de la mano que no deben entrar al cuerpo, relativos al hueso de la
+ * mano en orientación de reposo: muñeca, y nudillos, articulaciones y yemas de
+ * cada dedo con las rotaciones ya calculadas.
+ */
+function handSurfacePoints(rig: AvatarRig, side: Side, out: BoneRotations): THREE.Vector3[] {
+  const points = [new THREE.Vector3()];
+  for (const { name } of FINGERS) {
+    points.push(...handChainPositions(rig, side, PHALANGES.map((p) => name + p), out));
+  }
+  points.push(...handChainPositions(rig, side, ['ThumbMetacarpal', 'ThumbProximal', 'ThumbDistal'], out).slice(2));
+  return points;
 }
 
 /**
@@ -317,6 +486,7 @@ function retargetFingers(
   qHand: THREE.Quaternion,
   rig: AvatarRig,
   out: BoneRotations,
+  handshape?: Handshape,
 ): void {
   const hand = frame[`${side}HandWorld`]!;
   const toHandLocal = qHand.clone().invert();
@@ -335,16 +505,16 @@ function retargetFingers(
 
       const y = palm.clone().addScaledVector(rest, -palm.dot(rest)).normalize();
       const z = rest.clone().cross(y); // eje de flexión
-      const flex = THREE.MathUtils.clamp(
-        Math.atan2(d.dot(y), d.dot(rest)),
-        limits.flex[0],
-        limits.flex[1],
-      );
-      const abduction = THREE.MathUtils.clamp(
-        Math.asin(THREE.MathUtils.clamp(d.dot(z), -1, 1)),
-        -limits.abduction,
-        limits.abduction,
-      );
+      const flex = handshape
+        ? HANDSHAPE_FLEX[handshape][j]
+        : THREE.MathUtils.clamp(Math.atan2(d.dot(y), d.dot(rest)), limits.flex[0], limits.flex[1]);
+      const abduction = handshape
+        ? 0
+        : THREE.MathUtils.clamp(
+            Math.asin(THREE.MathUtils.clamp(d.dot(z), -1, 1)),
+            -limits.abduction,
+            limits.abduction,
+          );
       const constrained = rest
         .clone()
         .multiplyScalar(Math.cos(flex))
@@ -374,7 +544,7 @@ function retargetFingers(
     parent.multiply(q);
   }
 
-  preserveThumbContact(hand, side, toHandLocal, rig, out);
+  preserveThumbContact(hand, side, toHandLocal, rig, out, handshape);
 }
 
 /**
@@ -403,6 +573,63 @@ function handChainPositions(
 }
 
 /**
+ * Punto de los dedos del avatar al que va la yema del pulgar según el video:
+ * la articulación más cercana a la yema observada más el desplazamiento
+ * observado, escalado por el largo de mano. Peso 0 si no hay contacto.
+ */
+function observedThumbTarget(
+  hand: number[][],
+  side: Side,
+  toHandLocal: THREE.Quaternion,
+  rig: AvatarRig,
+  out: BoneRotations,
+): { target: THREE.Vector3; weight: number } | null {
+  const observed = (i: number) =>
+    toThree(hand[i]).sub(toThree(hand[0])).applyQuaternion(toHandLocal);
+  const observedHandLength = observed(9).length();
+  const avatarHandLength = rig.position(`${side}MiddleProximal`).distanceTo(rig.position(`${side}Hand`));
+  if (observedHandLength < 1e-6) return null;
+
+  const tipObserved = observed(4);
+  let nearest = THUMB_CONTACT_JOINTS[0];
+  for (const candidate of THUMB_CONTACT_JOINTS) {
+    if (tipObserved.distanceTo(observed(candidate[0])) < tipObserved.distanceTo(observed(nearest[0]))) {
+      nearest = candidate;
+    }
+  }
+  const ratio = tipObserved.distanceTo(observed(nearest[0])) / observedHandLength;
+  const weight = smoothstep((THUMB_CONTACT_RATIO - ratio) / THUMB_CONTACT_FADE);
+  if (weight <= 0) return null;
+
+  const [landmark, finger, phalanges] = nearest;
+  const chain = PHALANGES.slice(0, phalanges).map((p) => finger + p);
+  const joint = handChainPositions(rig, side, chain, out).at(-1)!;
+  const target = joint.add(
+    tipObserved.sub(observed(landmark)).multiplyScalar(avatarHandLength / observedHandLength),
+  );
+  return { target, weight };
+}
+
+/** Grosor de un dedo del modelo: separa la yema del pulgar del costado del índice. */
+const FINGER_THICKNESS = 0.012;
+
+/**
+ * Pulgar de una configuración registrada. En el puño va cerrado junto al
+ * costado del índice, a la altura de su falange media (configuración A, la del
+ * video de Por favor). La detección lo daba levantado, porque en el puño la
+ * yema queda lejos de las articulaciones que usa observedThumbTarget.
+ */
+function handshapeThumbTarget(
+  rig: AvatarRig,
+  side: Side,
+  out: BoneRotations,
+): { target: THREE.Vector3; weight: number } {
+  const [pip, dip] = handChainPositions(rig, side, ['IndexProximal', 'IndexIntermediate'], out).slice(1);
+  const radial = rig.position(`${side}IndexProximal`).clone().sub(rig.position(`${side}LittleProximal`)).normalize();
+  return { target: pip.lerp(dip, 0.5).addScaledVector(radial, FINGER_THICKNESS), weight: 1 };
+}
+
+/**
  * Preserva el contacto del pulgar con los dedos. Seguir solo la dirección de
  * cada falange no basta: el pulgar de VRoid es más largo y nace en otro punto
  * que el de una persona, así que con las mismas direcciones su punta quedaba
@@ -418,37 +645,19 @@ function preserveThumbContact(
   toHandLocal: THREE.Quaternion,
   rig: AvatarRig,
   out: BoneRotations,
+  handshape?: Handshape,
 ): void {
-  const observed = (i: number) =>
-    toThree(hand[i]).sub(toThree(hand[0])).applyQuaternion(toHandLocal);
-  const observedHandLength = observed(9).length();
-  const avatarHandLength = rig.position(`${side}MiddleProximal`).distanceTo(rig.position(`${side}Hand`));
-  if (observedHandLength < 1e-6) return;
-
-  const tipObserved = observed(4);
-  let nearest = THUMB_CONTACT_JOINTS[0];
-  for (const candidate of THUMB_CONTACT_JOINTS) {
-    if (tipObserved.distanceTo(observed(candidate[0])) < tipObserved.distanceTo(observed(nearest[0]))) {
-      nearest = candidate;
-    }
-  }
-  const ratio = tipObserved.distanceTo(observed(nearest[0])) / observedHandLength;
-  const weight = smoothstep((THUMB_CONTACT_RATIO - ratio) / THUMB_CONTACT_FADE);
-  if (weight <= 0) return;
-
-  // Mismo punto relativo en la mano del avatar: la articulación del avatar más
-  // el desplazamiento observado, escalado por el largo de mano.
-  const [landmark, finger, phalanges] = nearest;
-  const chain = PHALANGES.slice(0, phalanges).map((p) => finger + p);
-  const joint = handChainPositions(rig, side, chain, out).at(-1)!;
-  const target = joint.add(
-    tipObserved.sub(observed(landmark)).multiplyScalar(avatarHandLength / observedHandLength),
-  );
+  const contact = handshape ? handshapeThumbTarget(rig, side, out) : observedThumbTarget(hand, side, toHandLocal, rig, out);
+  if (!contact) return;
+  const { target, weight } = contact;
+  // Con configuración registrada la falange distal observada no es confiable
+  // (en el puño la daba estirada): también entra al IK.
+  const joints = handshape ? [2, 1, 0] : [1, 0];
 
   const thumb = ['ThumbMetacarpal', 'ThumbProximal', 'ThumbDistal'];
   const original = thumb.map((part) => (out.get(`${side}${part}`) ?? new THREE.Quaternion()).clone());
   for (let iteration = 0; iteration < 8; iteration++) {
-    for (const j of [1, 0]) {
+    for (const j of joints) {
       const points = handChainPositions(rig, side, thumb, out);
       const toEnd = points[3].clone().sub(points[j]);
       const toTarget = target.clone().sub(points[j]);
@@ -573,6 +782,20 @@ export function restRotation(bone: string): THREE.Quaternion {
   return new THREE.Quaternion();
 }
 
+/**
+ * Respiración: el pecho se inclina apenas hacia atrás al inhalar. Sin ella el
+ * torso quedaba congelado y el avatar se veía como maniquí aunque las manos se
+ * movieran bien (A34). Depende del tiempo absoluto, no del ciclo de la seña:
+ * no se reinicia al repetir (no hay salto) y con `?t=` queda fija. Brazos y
+ * cabeza cuelgan del pecho, así que la mano apoyada se mueve con él.
+ */
+const BREATH_SECONDS = 3.6;
+const BREATH_RADIANS = 0.012;
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+export function breathing(elapsedSeconds: number): number {
+  return -BREATH_RADIANS * 0.5 * (1 - Math.cos((2 * Math.PI * elapsedSeconds) / BREATH_SECONDS));
+}
+
 export interface SignPlayer {
   /**
    * Aplica la pose interpolada para el tiempo dado (en segundos, en loop).
@@ -593,6 +816,8 @@ export interface SignPlayerOptions {
   window?: [number, number];
   /** Expresión de la cara durante la seña (ver face.ts). */
   face?: FaceExpression;
+  /** Configuración manual registrada por mano (ver HANDSHAPE_FLEX). */
+  handshape?: Partial<Record<Side, Handshape>>;
 }
 
 /**
@@ -606,7 +831,11 @@ export function createSignPlayer(
   data: LandmarksFile,
   options: SignPlayerOptions = {},
 ): SignPlayer {
-  const ctx: RetargetContext = { rig, armScale: armScales(rig, data.frames) };
+  const ctx: RetargetContext = {
+    rig,
+    armScale: armScales(rig, data.frames),
+    handshape: options.handshape,
+  };
   const { frames: detected } = data;
   const frames = dropImplausibleHands(detected);
   const [from, to] = options.window ?? [-Infinity, Infinity];
@@ -653,6 +882,7 @@ export function createSignPlayer(
   }
 
   const face = createSignFace(vrm, options.face);
+  const chest = vrm.humanoid.getNormalizedBoneNode('upperChest') ?? vrm.humanoid.getNormalizedBoneNode('chest');
   const duration = clip.frameCount / clip.fps;
   const returnStart = clip.returnStartFrame / clip.fps;
   return {
@@ -671,6 +901,7 @@ export function createSignPlayer(
         node.quaternion.slerpQuaternions(track[i], track[next], alpha);
         if (weight < 1) node.quaternion.copy(restRotation(bone).slerp(node.quaternion, weight));
       }
+      chest?.quaternion.setFromAxisAngle(X_AXIS, breathing(elapsedSeconds));
     },
   };
 }

@@ -3,7 +3,7 @@ import { VRMExpression, VRMExpressionMorphTargetBind, type VRM } from '@pixiv/th
 
 /**
  * Gestos no manuales de una seña en el avatar: la expresión de la cara que
- * acompaña a la seña (en Por favor, la cara de súplica) y un parpadeo en el
+ * acompaña a la seña (en Hola y Por favor, una sonrisa) y un parpadeo en el
  * cierre del bucle.
  *
  * La expresión se REGISTRA por seña en animations.ts, no se extrae del video
