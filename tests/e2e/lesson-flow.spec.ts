@@ -36,7 +36,7 @@ const INIT_SCRIPT = `
         let t = 0;
         timer = setInterval(() => {
           t += 33;
-          onFrame({ landmarks: pose, handedness: 'Right', timestampMs: t, aspect: 1 });
+          onFrame({ hands: [{ landmarks: pose, handedness: 'Right' }], timestampMs: t, aspect: 1 });
         }, 33);
       },
       stop: () => {

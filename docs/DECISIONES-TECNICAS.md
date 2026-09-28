@@ -304,6 +304,91 @@ La seña real no pierde puntaje: su error de lugar queda dentro de la tolerancia
 - No distingue profundidad: una mano frente al pecho, sin tocarlo, cuenta igual que apoyada.
 - Las señas estáticas (abecedario) no usan lugar.
 
+### D38. Dos manos en cuadro: se detectan las dos y se valida la que hace la seña
+
+**Qué:**
+- El detector corre con `numHands: 2` y entrega todas las manos del frame (`HandsFrame`).
+- `HandTracker` (cv-model, `hands.ts`) elige la mano de la seña y la sigue:
+  - Al empezar, toma la mano registrada de la plantilla (`hand`, nuevo campo opcional de `DynamicTemplate`). Si no está, toma la única mano visible o la primera. Si tomó otra porque la registrada no estaba, cambia a la registrada en cuanto aparece.
+  - Después sigue por continuidad: la muñeca más cercana a la del frame anterior. Si la etiqueta Left/Right no coincide, suma un castigo de 0.5 largos de mano, pero no se descarta.
+  - Si la mano seguida queda tapada, el frame cuenta como vacío. No se mete la otra mano.
+  - La etiqueta que sale es la del seguimiento. Una mano no cambia de lado a mitad de la seña, así que las features no se espejan por un error de etiqueta.
+- `SessionValidator.feedHands()` usa el seguidor. La práctica dibuja en color la mano validada y en gris la otra.
+- `/plantillas` sigue a una sola mano mientras graba y guarda en la plantilla dinámica la mano con la que se grabó.
+- `build-templates.mjs` escribe `hand` cuando la seña la tiene registrada en `animations.ts`. Hoy solo la tiene Gracias (`Right`), y se agregó al bundle sin regenerar las demás plantillas.
+
+**Por qué:** con `numHands: 1`, en Gracias (la derecha se apoya sobre la palma izquierda) MediaPipe devuelve en cada frame la mano que mejor ve. Al encimarse las manos, la secuencia mezclaba las dos. La plantilla sí se construía con la derecha (A37), pero la cámara no respetaba ese criterio. Una persona reportó que Gracias no le validaba nunca y que "cambia la mano" al apoyarla.
+
+**Medido** (`diagnose-practice.mjs`, que ahora compara siguiendo la mano contra tomar la primera que reporta el detector):
+- Gracias, video de referencia con el detector anterior (`numHands: 1`): en los últimos 10 de 82 frames devuelve la mano izquierda. Valida con **0.651**.
+- Gracias, siguiendo la derecha: valida con **0.703** en 16:9 y 0.701 en 4:3, entre 0.70 y 0.78 a otras velocidades. Hay dos manos en 74 de 82 frames.
+- Hola y Por favor siguen validando en todos los escenarios, con puntajes de 0.60 a 0.73.
+
+**Descartado:**
+- **Features de dos manos** (la forma y el lugar de la mano de apoyo): serían lo correcto para distinguir señas que solo cambian en la mano de apoyo, pero exigen otra `FEATURE_VERSION` y regenerar todas las plantillas. Este cambio deja lista la base: el detector ya entrega las dos manos.
+- **Fijar la mano por etiqueta en todos los frames:** MediaPipe voltea la etiqueta justo cuando las manos se tocan.
+- **Elegir la mano que más se mueve:** hace falta una ventana de frames antes de decidir, y la mano de apoyo también se mueve al acomodarse.
+
+**Límites:**
+- Con la mano registrada, una persona zurda que haga Gracias en espejo se sigue por la mano de apoyo (su derecha). Las señas sin mano registrada (Hola, Por favor, abecedario) siguen aceptando cualquier mano.
+- En el video de referencia, Gracias queda solo 0.10 sobre el umbral, y es la misma señante de la plantilla. Con otras personas puede no alcanzar: falta calibrar el umbral con grabaciones reales (PENDIENTES 1.4).
+- `tune-motion.mjs` sigue leyendo los cachés viejos de una mano (`*.handlandmarker*.json`). Los nuevos se llaman `*.hands2*.json`.
+
+### D39. Forma de la mano sin su rotación; la orientación se compara aparte, con zona muerta
+
+**Qué:**
+- En las señas dinámicas, la distancia DTW entre dos frames ya no compara el vector de features tal cual. Ahora combina dos cosas (`orientation.ts`):
+  - **Configuración:** los 21 puntos en el marco de la propia mano. El eje "arriba" va de la muñeca al nudillo medio, el eje "a lo ancho" va del nudillo del índice al del meñique, y el tercero es la normal de la palma. Así no cambia al girar la mano entera.
+  - **Orientación:** el ángulo de la rotación entre los marcos de las dos manos. No cuesta nada hasta 25° (`ORIENTATION_DEADZONE_DEG`) y de ahí cuesta 2 largos de mano por radián (`ORIENTATION_WEIGHT`).
+- Todo se calcula desde el vector que ya se guarda, así que no cambia `FEATURE_VERSION` y no hay que regenerar plantillas, ni las empaquetadas ni las de `/plantillas`.
+- Las estáticas (abecedario) no cambian.
+- `SessionOptions.rotationTolerant: false` vuelve a la comparación anterior; solo sirve para medir.
+
+**Por qué:** una persona reportó que Gracias no le validaba nunca, aun con D38. Se armó `tools/content/stress-sign.mjs`, que simula variaciones de quien aprende sobre los frames del mismo HandLandmarker que usa la app, y el resultado fue claro:
+- La velocidad, sostener la mano, un contacto breve, apoyar más abajo, centrar la seña, 12 cuadros por segundo o el doble de temblor **no** tumban la seña.
+- Lo que sí la tumbaba era la orientación. Inclinar la mano 15° en la imagen dejaba la forma en 0.49–0.50, cuando la seña correcta está en 0.75 y una seña totalmente distinta en 0.27–0.32. La causa: la comparación usaba los puntos crudos relativos a la muñeca, y las puntas de los dedos están a unos 2 largos de mano de ella, así que cualquier inclinación las mueve mucho.
+
+**Medido** (`stress-sign.mjs`, temblor 0.003, antes → ahora; el umbral 0.60 no cambia):
+
+| Escenario | Gracias | Hola | Por favor |
+|---|---|---|---|
+| Mano inclinada ±15° | no 0.49–0.50 → **valida 0.77** | valida → valida | valida → valida |
+| Mano inclinada ±30° | no 0.33–0.37 → **valida 0.76** | valida → valida | valida → valida |
+| Palma girada ±30° (eje vertical) | no 0.41 → **valida 0.74–0.77** | valida → valida | valida → valida |
+| Apoyo con la palma abajo | no 0.40 → **no 0.50** | – | – |
+| Cámara espejada | no 0.42 → no 0.48 | valida | valida |
+| Mano quieta 3 s | no 0.03 → no 0.03 | no | no 0.16–0.18 → no 0.17–0.19 |
+| Otras señas con esta como objetivo (máximo) | 0.28 → 0.36 | 0.04 → 0.04 | 0.30 → 0.36 |
+
+Las escenas de aprendiz (0.5×–1.25×, sostener, más abajo, centrada) siguen validando en las tres señas, con cámara 16:9 y 4:3.
+
+**Descartado:**
+- **Bajar el umbral:** dejaría pasar más a quien ya pasa, pero no arregla que 15° cueste tanto como otra seña. Además acerca los falsos positivos.
+- **Quitar la orientación del todo:** en LSC es distintiva. La palma abajo en el apoyo de Gracias debe seguir sin validar, y sigue sin validar.
+- **Alinear las manos por rotación óptima (Procrustes):** también quita la rotación, pero no deja medir la orientación aparte para ponerle una zona muerta.
+
+**Límites:**
+- La zona muerta (25°) y el peso salen de variaciones simuladas sobre una sola señante. Hay que confirmarlos con grabaciones de personas (PENDIENTES 1.4).
+- La normal de la palma usa la profundidad (z) de MediaPipe, que es ruidosa: con la palma de canto a la cámara, el marco de la mano tiembla más.
+- Si la cámara entrega la imagen espejada, en Gracias se sigue a la mano de apoyo (D38) y no valida. Es poco común en Chrome, pero todavía no se detecta.
+
+### D40. La práctica dice qué falta cuando una seña dinámica no valida
+
+**Qué:**
+- `classifyDynamic` devuelve con cada resultado su desglose (`DynamicDetail`): forma, rotación media de la mano en grados, error y desplazamiento de lugar, y proporción de movimiento. `score = forma × lugar × movimiento`, igual que antes.
+- `SessionVerdict.target` trae el resultado de la seña buscada aunque otra quede primera.
+- `dynamicFeedback()` traduce el desglose en una sola indicación, la de lo que más falta, en este orden:
+  1. movimiento insuficiente;
+  2. lugar, con dirección ("más arriba", "más abajo", "más hacia el centro");
+  3. orientación, si la rotación media es de 35° o más (`ORIENTATION_HINT_DEG`);
+  4. si no es nada de lo anterior, forma de la mano.
+- La práctica la muestra bajo el estado a partir del mejor intento de los últimos 2.5 s.
+- Con `?detalle=1` en la URL de la práctica se ve el desglose numérico, para diagnosticar intentos reales.
+
+**Por qué:** la práctica solo decía "Te vemos — haz la seña", y quien fallaba no tenía cómo saber qué corregir. El umbral no cambia; solo se explica.
+
+**Por qué 35°:** con la palma abajo en el apoyo de Gracias, la rotación media es de ~45°. Las inclinaciones que sí validan quedan en 30° o menos.
+
 ---
 
 ## Un párrafo de síntesis

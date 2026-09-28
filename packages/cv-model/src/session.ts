@@ -9,10 +9,12 @@ import {
 } from './dynamicClassifier';
 import { motionTrajectory, wristSample, type WristSample } from './motion';
 import { locationSample, locationTrajectory } from './location';
+import { HandTracker, signHand } from './hands';
 import type {
   ClassifyResult,
   DynamicTemplate,
   HandFrame,
+  HandsFrame,
   SignTemplate,
   SignType,
 } from './types';
@@ -27,6 +29,16 @@ export interface SessionVerdict {
   status: SessionStatus;
   /** Best guess right now (may be another sign than the target). */
   best: ClassifyResult | null;
+  /**
+   * Resultado de la seña buscada en la última comparación (dinámicas), aunque
+   * otra quede primera: su desglose dice qué le falta para validar.
+   */
+  target?: ClassifyResult | null;
+}
+
+export interface HandsVerdict extends SessionVerdict {
+  /** La mano que se validó en este frame (la que sigue HandTracker), o null. */
+  hand: HandFrame | null;
 }
 
 export interface SessionOptions {
@@ -46,6 +58,8 @@ export interface SessionOptions {
   minMotionRatio?: number;
   /** Tolerancia de lugar en altos de cara (Infinity = sin compuerta de lugar, D37). */
   locationTolerance?: number;
+  /** Forma sin la rotación de la mano entera, con orientación aparte (D39). */
+  rotationTolerant?: boolean;
 }
 
 /** Ventana por defecto cuando la seña no trae duración de origen. */
@@ -89,6 +103,7 @@ export class SessionValidator {
   }[] = [];
   private lastDynamicCheckMs = -Infinity;
   private done = false;
+  private readonly tracker: HandTracker;
 
   constructor(
     targetSignId: string,
@@ -109,7 +124,9 @@ export class SessionValidator {
       motionWeight: options.motionWeight ?? MOTION_WEIGHT,
       minMotionRatio: options.minMotionRatio ?? MIN_MOTION_RATIO,
       locationTolerance: options.locationTolerance ?? LOCATION_TOLERANCE,
+      rotationTolerant: options.rotationTolerant ?? true,
     };
+    this.tracker = new HandTracker(signHand(targetSignId, templates));
   }
 
   /** True once the target sign has been validated; further frames are ignored. */
@@ -128,6 +145,16 @@ export class SessionValidator {
     this.buffer = [];
     this.lastDynamicCheckMs = -Infinity;
     this.done = false;
+    this.tracker.reset();
+  }
+
+  /**
+   * Frame con todas las manos que ve el detector (D38): se valida solo la que
+   * hace la seña (HandTracker); si no se ve, cuenta como frame vacío.
+   */
+  feedHands(frame: HandsFrame | null): HandsVerdict {
+    const hand = frame ? this.tracker.pick(frame) : null;
+    return { ...(hand ? this.feed(hand) : this.feedEmpty()), hand };
   }
 
   /** Call when the detector reports no hand in the frame. */
@@ -215,17 +242,19 @@ export class SessionValidator {
         minMotionRatio: this.opts.minMotionRatio,
         location: locationTrajectory(this.buffer.map((f) => f.location)),
         locationTolerance: this.opts.locationTolerance,
+        rotationTolerant: this.opts.rotationTolerant,
       },
     );
     const best = ranked[0] ?? null;
+    const target = ranked.find((r) => r.signId === this.targetSignId) ?? null;
 
     if (best && best.signId === this.targetSignId && best.score >= this.opts.dynamicThreshold) {
       this.done = true;
-      return { status: 'correct', best };
+      return { status: 'correct', best, target };
     }
     if (best && best.signId !== this.targetSignId && best.score >= this.opts.dynamicThreshold) {
-      return { status: 'retry', best };
+      return { status: 'retry', best, target };
     }
-    return { status: 'tracking', best };
+    return { status: 'tracking', best, target };
   }
 }

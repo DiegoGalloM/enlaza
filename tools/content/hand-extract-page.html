@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Corre el MISMO HandLandmarker que la pantalla de práctica (apps/web/src/cv/
-  detector.ts: hand_landmarker float16/1, VIDEO, numHands 1) sobre un video del
+  detector.ts: hand_landmarker float16/1, VIDEO, numHands 2, D38) sobre un video del
   repo, para simular lo que vería la cámara. La carga diagnose-practice.mjs.
   Parámetros: ?video=<ruta>&aspect=<ancho/alto de la "cámara", p. ej. 1.3333>
 -->
@@ -25,7 +25,7 @@
           'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
       },
       runningMode: 'VIDEO',
-      numHands: 1,
+      numHands: 2,
     });
     // Caja de la cara (BlazeFace, el mismo detector que la práctica): referencia
     // del lugar de la mano (D37). [centro x, centro y, ancho, alto], normalizada.
@@ -71,14 +71,17 @@
           const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
           lastTs = ts;
           const r = landmarker.detectForVideo(canvas, ts);
-          const lm = r.landmarks[0];
-          const hand = r.handedness[0]?.[0];
-          frames.push({
-            t: meta.mediaTime,
-            landmarks: lm ? lm.map((p) => ({ x: p.x, y: p.y, z: p.z })) : null,
-            handedness: hand ? (hand.categoryName === 'Left' ? 'Left' : 'Right') : null,
-            face: faceBox(canvas, ts, cropW, vh),
+          // Todas las manos, en el orden del detector (como las recibe la app).
+          const hands = r.landmarks.flatMap((lm, i) => {
+            const hand = r.handedness[i]?.[0];
+            return hand
+              ? [{
+                  landmarks: lm.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+                  handedness: hand.categoryName === 'Left' ? 'Left' : 'Right',
+                }]
+              : [];
           });
+          frames.push({ t: meta.mediaTime, hands, face: faceBox(canvas, ts, cropW, vh) });
         } catch (err) {
           reject(err);
           return;

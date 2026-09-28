@@ -1,6 +1,10 @@
-import type { FaceBox, HandFrame } from '@enlaza/cv-model';
+import type { FaceBox, HandsFrame } from '@enlaza/cv-model';
 
-export type FrameListener = (frame: HandFrame | null) => void;
+/**
+ * Recibe todas las manos que ve el detector en cada frame (hasta dos, D38), o
+ * null si no ve ninguna. Quién la consume elige la mano de la seña con HandTracker.
+ */
+export type FrameListener = (frame: HandsFrame | null) => void;
 
 /**
  * Abstraction over the hand-landmark source so the practice screen can run
@@ -80,7 +84,9 @@ class MediaPipeDetector implements HandDetector {
     const landmarker = await HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
       runningMode: 'VIDEO',
-      numHands: 1,
+      // Dos manos (D38): con una sola, en señas de dos manos (Gracias) MediaPipe
+      // devolvía la que mejor veía y la secuencia mezclaba las dos.
+      numHands: 2,
     });
     // Si el detector de caras no carga, la práctica sigue funcionando: las
     // señas se comparan sin lugar, como antes de D37.
@@ -105,9 +111,18 @@ class MediaPipeDetector implements HandDetector {
         lastVideoTime = video.currentTime;
         const now = performance.now();
         const result = landmarker.detectForVideo(video, now);
-        const landmarks = result.landmarks[0];
-        const handednessCategory = result.handedness[0]?.[0];
-        if (landmarks && handednessCategory) {
+        const hands = result.landmarks.flatMap((landmarks, i) => {
+          const category = result.handedness[i]?.[0];
+          return category
+            ? [
+                {
+                  landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+                  handedness: category.categoryName === 'Left' ? ('Left' as const) : ('Right' as const),
+                },
+              ]
+            : [];
+        });
+        if (hands.length > 0) {
           const face = faceDetector
             ? largestFace(
                 faceDetector.detectForVideo(video, now).detections,
@@ -116,8 +131,7 @@ class MediaPipeDetector implements HandDetector {
               )
             : undefined;
           onFrame({
-            landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-            handedness: handednessCategory.categoryName === 'Left' ? 'Left' : 'Right',
+            hands,
             timestampMs: now,
             aspect: video.videoWidth / video.videoHeight,
             ...(face ? { face } : {}),

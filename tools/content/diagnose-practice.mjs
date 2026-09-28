@@ -16,6 +16,10 @@
  * - lo mismo con cámara 4:3 (webcam típica; el video fuente es 16:9);
  * - distintas velocidades y repeticiones seguidas.
  *
+ * - con dos manos en cuadro (D38): cada escenario se corre siguiendo la mano
+ *   de la seña (HandTracker, lo que hace la app) y, para comparar, tomando la
+ *   primera mano que reporta el detector en cada frame (sin seguimiento).
+ *
  * Sigue siendo la misma señante: si aquí no valida, con otra persona menos.
  */
 import fs from 'node:fs';
@@ -54,28 +58,32 @@ function timeline(result, { speed = 1, cut = Infinity, repeat = 1, gapMs = 800 }
     for (const f of part) {
       out.push({
         tMs: offset + (f.t * 1000) / speed,
-        lm: f.landmarks,
-        hand: f.handedness,
+        hands: f.hands,
         aspect: result.cropW / result.height,
         face: faceFromBox(f.face),
       });
     }
     const end = offset + (part[part.length - 1].t * 1000) / speed;
     // La mano sale de cuadro entre repeticiones (y al final).
-    for (let t = end + 33; t < end + gapMs; t += 33) out.push({ tMs: t, lm: null });
+    for (let t = end + 33; t < end + gapMs; t += 33) out.push({ tMs: t, hands: [] });
     offset = end + gapMs;
   }
   return out;
 }
 
-function replay(events) {
+/** `tracked`: seguir la mano de la seña (la app, D38); si no, la primera mano de cada frame. */
+function replay(events, tracked) {
   const validator = new SessionValidator(signId, template.type, bundle.templates);
   let best = 0;
   let validatedAt = null;
   for (const e of events) {
-    const verdict = e.lm
-      ? validator.feed({ landmarks: e.lm, handedness: e.hand, timestampMs: e.tMs, aspect: e.aspect, face: e.face })
-      : validator.feedEmpty();
+    const frame = e.hands.length > 0 ? { hands: e.hands, timestampMs: e.tMs, aspect: e.aspect, face: e.face } : null;
+    const first = frame?.hands[0];
+    const verdict = tracked
+      ? validator.feedHands(frame)
+      : first
+        ? validator.feed({ ...first, timestampMs: e.tMs, aspect: e.aspect, face: e.face })
+        : validator.feedEmpty();
     if (verdict.best?.signId === signId) best = Math.max(best, verdict.best.score);
     if (verdict.status === 'correct' && validatedAt === null) validatedAt = e.tMs;
   }
@@ -85,7 +93,8 @@ function replay(events) {
 // Caché en carpeta gitignorada (mismo lugar que verify-template): la extracción tarda ~1 min.
 const CACHE_DIR = path.join(repoRoot, 'content', 'ical-2026-09', 'raw-content', 'cache');
 async function handFrames(extractor, aspect) {
-  const name = `${path.basename(video, '.mp4')}.handlandmarker${aspect ? '-4x3' : ''}.json`;
+  // "hands2": formato con todas las manos (numHands 2, D38); las cachés viejas eran de una.
+  const name = `${path.basename(video, '.mp4')}.hands2${aspect ? '-4x3' : ''}.json`;
   const file = path.join(CACHE_DIR, name);
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
   const params = aspect ? { aspect } : {};
@@ -105,8 +114,9 @@ try {
   const withFace = detected.filter((f) => f.face).length;
   console.log(
     `${signId}: plantilla dinámica, ventana ${template.sourceMs} ms, umbral 0.60\n` +
-      `HandLandmarker detectó mano en ${detected.filter((f) => f.landmarks).length}/${detected.length} frames; ` +
-      `etiquetas: ${[...new Set(detected.map((f) => f.handedness).filter(Boolean))].join(', ')}; ` +
+      `HandLandmarker detectó mano en ${detected.filter((f) => f.hands.length > 0).length}/${detected.length} frames, ` +
+      `dos manos en ${detected.filter((f) => f.hands.length > 1).length}; ` +
+      `mano registrada: ${template.hand ?? 'ninguna'}; ` +
       `cara en ${withFace}/${detected.length}\n`,
   );
   const scenarios = [
@@ -119,9 +129,13 @@ try {
   for (const [camera, result] of Object.entries(cameras)) {
     console.log(`Cámara ${camera}:`);
     for (const [label, opts] of scenarios) {
-      const { best, validatedAt } = replay(timeline(result, opts));
-      const verdict = validatedAt !== null ? `VALIDA a los ${(validatedAt / 1000).toFixed(1)} s` : 'NO VALIDA';
-      console.log(`  ${verdict.padEnd(20)} ${label.padEnd(40)} mejor puntaje ${best.toFixed(3)}`);
+      const events = timeline(result, opts);
+      const cells = [true, false].map((tracked) => {
+        const { best, validatedAt } = replay(events, tracked);
+        const verdict = validatedAt !== null ? `VALIDA ${(validatedAt / 1000).toFixed(1)} s` : 'NO VALIDA';
+        return `${verdict.padEnd(14)} ${best.toFixed(3)}`;
+      });
+      console.log(`  ${label.padEnd(40)} siguiendo: ${cells[0]}   sin seguir: ${cells[1]}`);
     }
   }
 } finally {
