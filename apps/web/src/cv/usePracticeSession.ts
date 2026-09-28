@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SessionValidator } from '@enlaza/cv-model';
-import type { ClassifyResult, HandFrame, SignTemplate, SignType } from '@enlaza/cv-model';
+import { SessionValidator, dynamicFeedback } from '@enlaza/cv-model';
+import type {
+  ClassifyResult,
+  DynamicFeedback,
+  HandsFrame,
+  Landmark,
+  SignTemplate,
+  SignType,
+} from '@enlaza/cv-model';
 import { cameraAspect, createDetector } from './detector';
 import { legacyTemplateIds, mergeTemplates, migrateLegacyTemplates } from './templates';
 
@@ -18,6 +25,11 @@ interface PracticeSession {
   /** Confirmed score when status === 'correct'. */
   finalScore: number | null;
   /**
+   * Seña dinámica que aún no valida: el mejor intento reciente de la seña
+   * buscada, con su desglose, y qué corregir (D40). null si no hay intento.
+   */
+  attempt: { result: ClassifyResult; feedback: DynamicFeedback } | null;
+  /**
    * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
    * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
    */
@@ -34,33 +46,61 @@ const CONNECTIONS: [number, number][] = [
   [0, 17],
 ];
 
-function drawOverlay(canvas: HTMLCanvasElement, frame: HandFrame | null): void {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!frame) return;
-
+function drawHand(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  landmarks: Landmark[],
+  colors: { bone: string; joint: string },
+): void {
   const px = (x: number) => x * canvas.width;
   const py = (y: number) => y * canvas.height;
 
-  ctx.strokeStyle = 'rgba(147, 182, 239, 0.85)';
+  ctx.strokeStyle = colors.bone;
   ctx.lineWidth = 3;
   for (const [a, b] of CONNECTIONS) {
-    const pa = frame.landmarks[a];
-    const pb = frame.landmarks[b];
+    const pa = landmarks[a];
+    const pb = landmarks[b];
     if (!pa || !pb) continue;
     ctx.beginPath();
     ctx.moveTo(px(pa.x), py(pa.y));
     ctx.lineTo(px(pb.x), py(pb.y));
     ctx.stroke();
   }
-  ctx.fillStyle = '#7FD3AE';
-  for (const p of frame.landmarks) {
+  ctx.fillStyle = colors.joint;
+  for (const p of landmarks) {
     ctx.beginPath();
     ctx.arc(px(p.x), py(p.y), 4, 0, Math.PI * 2);
     ctx.fill();
   }
 }
+
+/**
+ * Dibuja las manos detectadas: en color la que se está validando y tenue la
+ * otra (la de apoyo en señas de dos manos, D38), para que se vea cuál se lee.
+ */
+function drawOverlay(
+  canvas: HTMLCanvasElement,
+  frame: HandsFrame | null,
+  tracked: Landmark[] | null,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!frame) return;
+  for (const hand of frame.hands) {
+    if (hand.landmarks === tracked) continue;
+    drawHand(ctx, canvas, hand.landmarks, {
+      bone: 'rgba(200, 200, 200, 0.35)',
+      joint: 'rgba(200, 200, 200, 0.5)',
+    });
+  }
+  if (tracked) {
+    drawHand(ctx, canvas, tracked, { bone: 'rgba(147, 182, 239, 0.85)', joint: '#7FD3AE' });
+  }
+}
+
+/** Tiempo durante el que se considera "reciente" un intento para la indicación, en ms. */
+const FEEDBACK_WINDOW_MS = 2500;
 
 export function usePracticeSession(
   sign: { id: string; type: SignType } | null,
@@ -74,23 +114,41 @@ export function usePracticeSession(
   const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
+  const [attempt, setAttempt] = useState<PracticeSession['attempt']>(null);
   const validatorRef = useRef<SessionValidator | null>(null);
+  /** Resultados recientes de la seña buscada, para la indicación de qué corregir. */
+  const recentTargets = useRef<{ t: number; result: ClassifyResult }[]>([]);
 
   const retry = useCallback(() => {
     validatorRef.current?.reset();
+    recentTargets.current = [];
     setStatus('waiting');
     setBest(null);
     setFinalScore(null);
+    setAttempt(null);
   }, []);
 
   const onFrame = useCallback(
-    (validator: SessionValidator) => (frame: HandFrame | null) => {
-      if (canvasRef.current) drawOverlay(canvasRef.current, frame);
-      const verdict = frame ? validator.feed(frame) : validator.feedEmpty();
+    (validator: SessionValidator) => (frame: HandsFrame | null) => {
+      // Solo se valida la mano que hace la seña, no la de apoyo (D38).
+      const verdict = validator.feedHands(frame);
+      if (canvasRef.current) drawOverlay(canvasRef.current, frame, verdict.hand?.landmarks ?? null);
       setStatus(verdict.status);
       setBest(verdict.best);
       if (verdict.status === 'correct' && verdict.best) {
         setFinalScore(verdict.best.score);
+        setAttempt(null);
+      } else if (verdict.target?.detail && frame) {
+        // El mejor intento de los últimos segundos: una comparación suelta a
+        // media seña no dice nada útil.
+        const now = frame.timestampMs;
+        const recent = recentTargets.current.filter((r) => now - r.t <= FEEDBACK_WINDOW_MS);
+        recent.push({ t: now, result: verdict.target });
+        recentTargets.current = recent;
+        const top = recent.reduce((a, b) => (b.result.score > a.result.score ? b : a)).result;
+        setAttempt((prev) =>
+          prev?.result === top ? prev : { result: top, feedback: dynamicFeedback(top.detail!) },
+        );
       }
     },
     [],
@@ -107,6 +165,8 @@ export function usePracticeSession(
     setStatus('waiting');
     setBest(null);
     setFinalScore(null);
+    setAttempt(null);
+    recentTargets.current = [];
     setCameraState('starting');
     setCameraError(null);
 
@@ -178,6 +238,7 @@ export function usePracticeSession(
     videoRef,
     canvasRef,
     finalScore,
+    attempt,
     retry,
   };
 }

@@ -72,8 +72,17 @@ function installFakeDetector(): {
     },
   });
   return {
+    // El detector entrega todas las manos del frame (D38); aquí, siempre una.
     emit: (frame) => {
-      listener?.(frame);
+      listener?.(
+        frame
+          ? {
+              hands: [{ landmarks: frame.landmarks, handedness: frame.handedness }],
+              timestampMs: frame.timestampMs,
+              aspect: frame.aspect,
+            }
+          : null,
+      );
     },
     starts: () => starts,
   };

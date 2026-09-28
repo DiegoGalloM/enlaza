@@ -7,9 +7,22 @@ import { fetchBundledTemplates, loadTemplates, mergeTemplates } from '../cv/temp
 import { usePracticeSession } from '../cv/usePracticeSession';
 import styles from './Practice.module.css';
 import { SCORE_LEVEL_LABEL, scoreLevel } from '@enlaza/cv-model';
-import type { SignTemplate } from '@enlaza/cv-model';
+import type { DynamicDetail, SignTemplate } from '@enlaza/cv-model';
 
 const NO_TEMPLATES: SignTemplate[] = [];
+
+/** Desglose del puntaje de un intento: forma × lugar × movimiento (D40). */
+function formatDetail(score: number, d: DynamicDetail): string {
+  const parts = [`puntaje ${score.toFixed(2)} (umbral 0.60)`, `forma ${d.shape.toFixed(2)}`];
+  if (d.orientationDeg !== undefined) parts.push(`rotación ${d.orientationDeg.toFixed(0)}°`);
+  if (d.locationError !== undefined) {
+    parts.push(`lugar ${d.locationFactor.toFixed(2)} (error ${d.locationError.toFixed(2)} caras)`);
+  }
+  if (d.motionRatio !== undefined) {
+    parts.push(`movimiento ${d.motionFactor.toFixed(2)} (${(d.motionRatio * 100).toFixed(0)}%)`);
+  }
+  return parts.join(' · ');
+}
 
 /**
  * Plantillas disponibles para practicar: las empaquetadas con la app
@@ -41,6 +54,8 @@ export function Practice() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const requestedSignId = searchParams.get('sign');
+  // ?detalle=1: desglose numérico del intento (para diagnosticar el reconocimiento).
+  const showDetail = searchParams.get('detalle') === '1';
   const signs = useMemo(() => data?.signs ?? [], [data]);
   const currentSign = signs.find((s) => s.id === requestedSignId) ?? signs[0] ?? null;
 
@@ -160,6 +175,17 @@ export function Practice() {
             <div className={styles.statusPill}>Muestra tu mano a la cámara</div>
           )}
         </div>
+
+        {session.status !== 'correct' && session.attempt && (
+          <p className={styles.hint} role="status">
+            {session.attempt.feedback.message}
+          </p>
+        )}
+        {showDetail && session.attempt?.result.detail && (
+          <p className={styles.detail}>
+            {formatDetail(session.attempt.result.score, session.attempt.result.detail)}
+          </p>
+        )}
 
         {session.status === 'correct' && (
           <div className={styles.actions}>

@@ -39,6 +39,23 @@ export interface HandFrame {
   face?: FaceBox;
 }
 
+/** Una mano detectada en un frame, sin decidir aún si es la que hace la seña. */
+export interface DetectedHand {
+  landmarks: Landmark[];
+  handedness: Handedness;
+}
+
+/**
+ * Todas las manos que ve el detector en un frame (hasta dos, D38). HandTracker
+ * elige de aquí la mano que hace la seña y la convierte en HandFrame.
+ */
+export interface HandsFrame {
+  hands: DetectedHand[];
+  timestampMs: number;
+  aspect: number;
+  face?: FaceBox;
+}
+
 /**
  * Señas estáticas: una postura fija → un solo vector de features.
  * Señas dinámicas: postura + movimiento → secuencia de vectores.
@@ -78,12 +95,49 @@ export interface DynamicTemplate {
    * lo exigen.
    */
   location?: number[][];
+  /**
+   * Mano con la que se hace la seña, si está registrada (D38). Con dos manos
+   * en cuadro, la práctica sigue a esta y no a la de apoyo. Opcional: sin
+   * ella se sigue a la primera mano que aparezca.
+   */
+  hand?: Handedness;
 }
 
 export type SignTemplate = StaticTemplate | DynamicTemplate;
+
+/**
+ * Desglose del puntaje de una seña dinámica: score = forma × lugar × movimiento.
+ * Sirve para decir qué falló (retroalimentación en la práctica) y para medir.
+ */
+export interface DynamicDetail {
+  /** Similitud DTW de forma de la mano (+ recorrido de la muñeca), antes de compuertas. */
+  shape: number;
+  /**
+   * Rotación media de la mano respecto a la plantilla, en grados, sobre los
+   * frames que alinea DTW (D39). Alta = la palma o los dedos miran a otro lado.
+   */
+  orientationDeg?: number;
+  /** Error medio de lugar en altos de cara, si se evaluó. */
+  locationError?: number;
+  /**
+   * Desplazamiento medio del lugar (captura − plantilla), en altos de cara:
+   * [x hacia el lado de la mano, y hacia abajo]. Dice hacia dónde corregir.
+   */
+  locationOffset?: [number, number];
+  /** Factor de la compuerta de lugar (1 = sin castigo). */
+  locationFactor: number;
+  /** Movimiento de la captura / movimiento de la plantilla, si se evaluó. */
+  motionRatio?: number;
+  /** Factor de la compuerta de cantidad de movimiento (1 = sin castigo). */
+  motionFactor: number;
+  /** Duración de la ventana que dio este puntaje, en ms (la elige SessionValidator). */
+  windowMs?: number;
+}
 
 export interface ClassifyResult {
   signId: string;
   /** Similarity in [0, 1]; higher is better. */
   score: number;
+  /** Solo en señas dinámicas. */
+  detail?: DynamicDetail;
 }

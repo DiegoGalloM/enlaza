@@ -1,5 +1,6 @@
 import { euclideanDistance } from './normalize';
-import type { ClassifyResult, DynamicTemplate } from './types';
+import { handShape, handShapeDistance, orientationAngle } from './orientation';
+import type { ClassifyResult, DynamicDetail, DynamicTemplate } from './types';
 
 /** Frames per resampled sequence — all DTW comparisons use this length. */
 export const SEQUENCE_LENGTH = 16;
@@ -52,6 +53,11 @@ export interface DynamicMotionOptions {
   location?: number[][];
   /** Tolerancia de lugar en altos de cara (Infinity = sin compuerta de lugar). */
   locationTolerance?: number;
+  /**
+   * Comparar la forma separando configuración y orientación (D39). false
+   * compara el vector crudo, como antes: solo para medir el cambio.
+   */
+  rotationTolerant?: boolean;
 }
 
 /** Factor de la compuerta de lugar para un error medio dado (1 = sin castigo). */
@@ -134,8 +140,14 @@ export function dtwAlign(
   motionA?: number[][],
   motionB?: number[][],
   motionWeight = MOTION_WEIGHT,
-): { distance: number; path: [number, number][] } {
+  rotationTolerant = true,
+): { distance: number; path: [number, number][]; orientationDeg?: number } {
   const withMotion = motionA !== undefined && motionB !== undefined;
+  // Forma de la mano: configuración + orientación con zona muerta (D39). Solo
+  // aplica a vectores de mano (63 valores); otros se comparan tal cual.
+  const shaped = rotationTolerant && a[0]?.length === 63 && b[0]?.length === 63;
+  const shapesA = shaped ? a.map(handShape) : [];
+  const shapesB = shaped ? b.map(handShape) : [];
   const n = a.length;
   const m = b.length;
   const INF = Number.POSITIVE_INFINITY;
@@ -144,7 +156,9 @@ export function dtwAlign(
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      const shape = euclideanDistance(a[i - 1]!, b[j - 1]!);
+      const shape = shaped
+        ? handShapeDistance(shapesA[i - 1]!, shapesB[j - 1]!)
+        : euclideanDistance(a[i - 1]!, b[j - 1]!);
       const d = withMotion
         ? Math.hypot(shape, motionWeight * euclideanDistance(motionA[i - 1]!, motionB[j - 1]!))
         : shape;
@@ -169,8 +183,38 @@ export function dtwAlign(
     }
   }
   path.reverse();
+  // Rotación media de la mano a lo largo del camino: para decir qué falló (D39).
+  let orientationDeg: number | undefined;
+  if (shaped) {
+    let sum = 0;
+    let count = 0;
+    for (const [pi, pj] of path) {
+      const fa = shapesA[pi]!.frame;
+      const fb = shapesB[pj]!.frame;
+      if (fa && fb) {
+        sum += orientationAngle(fa, fb);
+        count++;
+      }
+    }
+    if (count > 0) orientationDeg = ((sum / count) * 180) / Math.PI;
+  }
   // Normalize by path length so longer sequences aren't penalized.
-  return { distance: cost[n]![m]! / (n + m), path };
+  return { distance: cost[n]![m]! / (n + m), path, ...(orientationDeg !== undefined ? { orientationDeg } : {}) };
+}
+
+/** Desplazamiento medio (a − b) del lugar a lo largo de un camino DTW, en altos de cara. */
+export function locationOffset(
+  path: [number, number][],
+  locationA: number[][],
+  locationB: number[][],
+): [number, number] {
+  let x = 0;
+  let y = 0;
+  for (const [i, j] of path) {
+    x += locationA[i]![0]! - locationB[j]![0]!;
+    y += locationA[i]![1]! - locationB[j]![1]!;
+  }
+  return path.length > 0 ? [x / path.length, y / path.length] : [0, 0];
 }
 
 /** Error medio de lugar a lo largo de un camino DTW, en altos de cara. */
@@ -205,6 +249,7 @@ export function classifyDynamic(
     minMotionRatio = MIN_MOTION_RATIO,
     location,
     locationTolerance = LOCATION_TOLERANCE,
+    rotationTolerant = true,
   } = options;
   const seq = resampleSequence(frames);
   // Lugar: solo si la captura lo trae (hubo cara) y la plantilla también.
@@ -220,21 +265,27 @@ export function classifyDynamic(
   return templates
     .map((t) => {
       const templateMotion = seqMotion ? t.motion : undefined;
-      const aligned = dtwAlign(seq, t.frames, seqMotion, templateMotion, motionWeight);
-      let score = dtwSimilarity(aligned.distance);
+      const aligned = dtwAlign(seq, t.frames, seqMotion, templateMotion, motionWeight, rotationTolerant);
+      const detail: DynamicDetail = {
+        shape: dtwSimilarity(aligned.distance),
+        locationFactor: 1,
+        motionFactor: 1,
+        ...(aligned.orientationDeg !== undefined ? { orientationDeg: aligned.orientationDeg } : {}),
+      };
       if (seqLocation && t.location) {
-        score *= locationFactor(
-          locationError(aligned.path, seqLocation, t.location),
-          locationTolerance,
-        );
+        detail.locationError = locationError(aligned.path, seqLocation, t.location);
+        detail.locationOffset = locationOffset(aligned.path, seqLocation, t.location);
+        detail.locationFactor = locationFactor(detail.locationError, locationTolerance);
       }
       if (templateMotion) {
         const templateAmount = motionAmount(templateMotion);
         if (templateAmount > MOTION_NOISE_FLOOR && minMotionRatio > 0) {
-          score *= Math.min(1, seqAmount / (minMotionRatio * templateAmount));
+          detail.motionRatio = seqAmount / templateAmount;
+          detail.motionFactor = Math.min(1, detail.motionRatio / minMotionRatio);
         }
       }
-      return { signId: t.signId, score };
+      const score = detail.shape * detail.locationFactor * detail.motionFactor;
+      return { signId: t.signId, score, detail };
     })
     .sort((a, b) => b.score - a.score);
 }

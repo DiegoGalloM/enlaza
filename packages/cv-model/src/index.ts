@@ -7,3 +7,6 @@ export * from './quality';
 export * from './migrate';
 export * from './motion';
 export * from './location';
+export * from './hands';
+export * from './orientation';
+export * from './feedback';

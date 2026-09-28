@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
+  HandTracker,
   buildDynamicTemplate,
   buildStaticTemplate,
   locationSample,
@@ -54,6 +55,8 @@ export function Calibration() {
   const latestFrame = useRef<HandFrame | null>(null);
   const recordingRef = useRef(false);
   const recordingBuffer = useRef<HandFrame[]>([]);
+  /** Con dos manos en cuadro, se graba siempre la misma (D38). */
+  const tracker = useRef(new HandTracker());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const signs = lessonQuery.data?.signs ?? [];
@@ -100,7 +103,8 @@ export function Calibration() {
         if (aspect && migrateLegacyTemplates(aspect).length > 0 && !cancelled) {
           setTemplates(loadTemplates());
         }
-        await detector.start(video, (frame) => {
+        await detector.start(video, (hands) => {
+          const frame = hands ? tracker.current.pick(hands) : null;
           latestFrame.current = frame;
           setHandVisible(frame !== null);
           if (frame && recordingRef.current) {
@@ -168,9 +172,11 @@ export function Calibration() {
       const location = locationTrajectory(
         frames.map((f) => locationSample(f.landmarks, f.handedness, f.aspect, f.face)),
       );
-      setTemplates(
-        upsertTemplate(buildDynamicTemplate(selectedSign.id, vectors, undefined, motion, location)),
-      );
+      const template = buildDynamicTemplate(selectedSign.id, vectors, undefined, motion, location);
+      // La mano con la que se grabó: en la práctica, con dos manos en cuadro,
+      // se sigue a esa (D38). El seguimiento mantiene la etiqueta estable.
+      template.hand = frames[0]!.handedness;
+      setTemplates(upsertTemplate(template));
       setMessage(`Plantilla dinámica de "${selectedSign.gloss}" guardada (${frames.length} cuadros).`);
     }, DYNAMIC_CAPTURE_MS);
   }

@@ -25,7 +25,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
-import { chooseHand, frameLocation, frameVector, frameWrist, videoAspect } from './common.mjs';
+import {
+  appHandedness,
+  chooseHand,
+  frameLocation,
+  frameVector,
+  frameWrist,
+  videoAspect,
+} from './common.mjs';
 import { buildAlphabet } from './build-alphabet.mjs';
 import {
   buildDynamicTemplate,
@@ -67,7 +74,8 @@ async function buildCourtesy(extractor, wanted) {
     // Mano de la seña: la registrada (animations.ts), que es la misma fuente
     // de verdad que el tramo. Con dos manos encimadas (Gracias) el criterio
     // automático se confundía y elegía la de apoyo (A37).
-    const side = signAnimationFor(signId)?.hand ?? chooseHand(frames);
+    const registeredHand = signAnimationFor(signId)?.hand;
+    const side = registeredHand ?? chooseHand(frames);
     if (!side) throw new Error(`Sin manos detectadas en ${video}`);
     const withHand = frames.filter((f) => f[`${side}Hand`]);
     const vectors = withHand.map((f) => frameVector(f, side, videoAspect(result)));
@@ -83,7 +91,11 @@ async function buildCourtesy(extractor, wanted) {
     const location = locationTrajectory(
       withHand.map((f) => frameLocation(f, side, videoAspect(result))),
     );
-    templates.push(buildDynamicTemplate(signId, vectors, sourceMs, motion, location));
+    const template = buildDynamicTemplate(signId, vectors, sourceMs, motion, location);
+    // La mano registrada viaja en la plantilla: con dos manos en cuadro, la
+    // práctica sigue a esa y no a la de apoyo (D38).
+    if (registeredHand) template.hand = appHandedness(registeredHand);
+    templates.push(template);
     console.log(
       `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ` +
         `${vectors.length} frames, ${(sourceMs / 1000).toFixed(1)}s` +
