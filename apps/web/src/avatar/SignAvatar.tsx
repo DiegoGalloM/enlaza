@@ -114,6 +114,7 @@ export function SignAvatar({
           window: animation.window,
           face: animation.face,
           handshape: animation.handshape,
+          handshapeSpan: animation.handshapeSpan,
           faceContact: animation.faceContact,
           palmUp: animation.palmUp,
           holdUntil: animation.holdUntil,

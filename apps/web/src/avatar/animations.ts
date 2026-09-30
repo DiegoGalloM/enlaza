@@ -36,6 +36,12 @@ export interface SignAnimation {
    */
   handshape?: { left?: Handshape; right?: Handshape };
   /**
+   * Tramo del video, en segundos, en que vale `handshape`, cuando la mano
+   * cambia de configuración a mitad de la seña (Buenos días: plana en la boca,
+   * abierta después). Fuera del tramo los dedos siguen la detección.
+   */
+  handshapeSpan?: { left?: [number, number]; right?: [number, number] };
+  /**
    * Tramo del video, en segundos, en que la yema del dedo medio toca la cara
    * (labios, mentón). MediaPipe no da bien la profundidad de la mano frente a
    * la cara y la dejaba flotando; con esto se apoya en la piel del modelo (A35).
@@ -114,6 +120,38 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
     faceContact: { right: [0.6, 1.17] },
     palmUp: { left: [1.42, 2.0], right: [1.42, 2.0] },
     holdUntil: { left: 1.5 },
+    hand: 'right',
+  },
+  // Buenos días: seña compuesta, "bueno" + "día". Bueno: mano derecha plana
+  // con las yemas en los labios y el mentón (0.47–1.09 s en el video), con la
+  // izquierda palma arriba frente al abdomen; luego la derecha baja junto a la
+  // izquierda (1.2–1.4 s). Día: las dos manos, curvas y palmas abajo frente al
+  // pecho (1.66–1.95 s), suben cruzándose frente a la cara (2.13–2.39 s) y se
+  // abren a los lados de la cabeza, abiertas, con los dedos separados y las
+  // palmas al frente (2.56–3.12 s). Antes la derecha sube desde el reposo y
+  // después las manos bajan y se entrelazan: nada de eso es la seña.
+  // Cara: la misma sonrisa que Hola (la señante sonríe toda la seña, más al
+  // abrir las manos).
+  // Mano derecha: plana solo mientras está en la boca y baja (la detección la
+  // daba en gancho, A32); en el "día" va abierta con los dedos separados, y
+  // eso sí lo capta la detección.
+  // Contacto: la yema toca la boca de 0.47 a 1.09 s (como en Gracias, A35).
+  // Se registra hasta 0.95 s: la rampa de salida (0.25 s) termina así con la
+  // mano todavía quieta. Hasta 1.09 s, la mano soltaba la inclinación sobre la
+  // yema (65° → 0°) en dos cuadros al bajar rápido (A38).
+  // Mano izquierda: palma arriba al costado, frente a la cadera, y a 1.4 s se
+  // acerca al centro, junto a la derecha. En el avatar quedaba estirada hacia
+  // la cámara y cortada en el borde de abajo, y el acercamiento era un salto
+  // de 23 cm. Es la mano de apoyo: empieza ya donde recibe a la derecha (A37).
+  'lsc-cortesia-0': {
+    gloss: 'Buenos días',
+    url: '/avatar/buenos-dias.landmarks.json',
+    window: [0.45, 3.12],
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+    handshape: { right: 'plana' },
+    handshapeSpan: { right: [0.45, 1.2] },
+    faceContact: { right: [0.47, 0.95] },
+    holdUntil: { left: 1.45 },
     hand: 'right',
   },
 };

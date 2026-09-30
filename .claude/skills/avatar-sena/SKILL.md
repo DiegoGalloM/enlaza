@@ -1,24 +1,26 @@
 ---
 name: avatar-sena
-description: Receta y lista de control para llevar una seña nueva al avatar 3D de Enlaza (o pulir una existente) sin repetir errores ya resueltos. Usar cuando se pida hacer, revisar, mejorar o corregir la animación del avatar de cualquier seña (Gracias, Buenos días, Permiso, etc.), o cuando el avatar se vea triste, rígido, con la mano abierta, o atravesándose (brazo en la camiseta, pelo a través de la mano).
+description: Receta y lista de control para llevar una seña nueva al avatar 3D de Enlaza (o pulir una existente) y a su reconocimiento con cámara, sin repetir errores ya resueltos. Usar cuando se pida hacer, revisar, mejorar o corregir la animación del avatar de cualquier seña (Gracias, Buenos días, Permiso, etc.), cuando el avatar se vea triste, rígido, con la mano abierta, o atravesándose (brazo en la camiseta, pelo a través de la mano), o cuando la práctica no reconozca una seña.
 ---
 
 # Seña nueva en el avatar 3D
 
-El avatar ya resuelve en el pipeline los problemas de Hola y Por favor. Una seña
-nueva casi siempre se hace **registrando datos** en `apps/web/src/avatar/animations.ts`
-(tramo, cara y configuración manual), no cambiando el retargeting. El porqué de
-cada decisión está en `docs/AVATAR-DECISIONES.md` (A1–A34). Léelo antes de tocar
-`retarget.ts`, `rig.ts`, `cleanup.ts` o `face.ts`.
+El avatar ya resuelve en el pipeline los problemas de Hola, Por favor, Gracias y Buenos días.
+Una seña nueva casi siempre se hace **registrando datos** en
+`apps/web/src/avatar/animations.ts` (tramo, cara, configuración manual, mano), no
+cambiando el retargeting ni el reconocimiento. El porqué de cada decisión está en
+`docs/AVATAR-DECISIONES.md` (A1–A38) para el avatar y en
+`docs/DECISIONES-TECNICAS.md` (D35–D41) para el reconocimiento. Léelos antes de
+tocar `retarget.ts`, `rig.ts`, `cleanup.ts`, `face.ts` o `packages/cv-model`.
 
 ## Señas pendientes (lección `cortesia`)
 
 | signId | Glosa | Video | Estado |
 |---|---|---|---|
-| lsc-cortesia-0 | Buenos días | buenos-dias.mp4 | pendiente |
+| lsc-cortesia-0 | Buenos días | buenos-dias.mp4 | hecha (A38, D41) |
 | lsc-cortesia-1 | Buenas tardes | buenas-tardes.mp4 | pendiente |
 | lsc-cortesia-2 | Buenas noches | buenas-noches.mp4 | pendiente |
-| lsc-cortesia-3 | Gracias | gracias.mp4 | hecha (A35–A37) |
+| lsc-cortesia-3 | Gracias | gracias.mp4 | hecha (A35–A37, D38–D40) |
 | lsc-cortesia-4 | Por favor | por-favor.mp4 | hecha (A20–A34) |
 | lsc-cortesia-5 | Hola | hola.mp4 | hecha (A1–A28) |
 | lsc-cortesia-6 | Con mucho gusto | con-mucho-gusto.mp4 | pendiente |
@@ -37,7 +39,8 @@ Al terminar una seña, actualiza esta tabla.
 - Todas las herramientas de `tools/avatar/` se corren desde la raíz del repo.
   Necesitan `@playwright/test`, que está en `node_modules`. Si un script
   temporal vive fuera del repo, falla al resolver `@playwright/test`.
-- Rama `feature/avatar-poc`. No hagas commit sin que lo pidan.
+- Trabaja en la rama que tenga el usuario (él crea ramas y hace los commits).
+  No hagas commit sin que lo pida.
 
 ## Pasos
 
@@ -67,24 +70,49 @@ Al terminar una seña, actualiza esta tabla.
      da a medio doblar y el avatar muestra un gancho abierto (A32). Para una
      configuración nueva (índice, C…), agrégala a `HANDSHAPE_FLEX` en
      `retarget.ts`, con su pulgar en `handshapeThumbTarget`.
+   - `handshapeSpan: { right: [a, b] }` si la mano cambia de configuración a
+     mitad de la seña (Buenos días: plana en la boca, abierta en el "día").
+     La configuración registrada vale solo en ese tramo; fuera de él, los dedos
+     siguen la detección (A38).
    - `faceContact: { right: [a, b] }` si la yema toca la cara (labios, mentón,
      frente): MediaPipe pone la mano hasta 17 cm por delante y el avatar la deja
-     flotando, lo que solo se ve de lado (A35).
+     flotando, lo que solo se ve de lado (A35). Si la mano se va rápido de la
+     cara, termina el tramo ~0.15 s antes de que se mueva: la rampa de salida
+     con la mano bajando da un tirón en la muñeca (A38).
    - `palmUp: { left: [a, b], right: [a, b] }` si la mano va con la palma hacia
      arriba y la detección no es confiable (dos manos encimadas: anchos de
      nudillos de 1–4 cm en vez de 6.5). La orientación sale del antebrazo (A36).
    - `holdUntil: { left: t }` para que la mano de apoyo empiece ya en su lugar,
      en vez de subir desde el regazo, que es preparación (A37).
-   - `hand: 'right' | 'left'`: la mano que hace la seña, para la plantilla de
-     reconocimiento (si no, la elige por cuánto se mueve cada mano y con dos
-     manos se confunde, A37).
+   - `hand: 'right' | 'left'`: la mano que hace la seña. **Obligatoria en señas
+     de dos manos.** Sirve dos veces: la plantilla se construye con esa mano
+     (A37), y `build-templates` la escribe en la plantilla (`hand: 'Right'`)
+     para que la práctica siga a esa mano y no a la de apoyo (D38). Sin ella,
+     la plantilla elige por cuánto se mueve cada mano y la práctica sigue a la
+     primera que aparece.
 4. **Revisar en `/avatar-poc?sena=<signId>`.** Ver la lista de control abajo.
-5. **Plantilla de reconocimiento y verificación.** Son los pasos 5–6 de la
-   "Receta para una seña nueva" en `docs/AVATAR-DECISIONES.md`:
-   `build-templates --only <todas las revisadas>`, `verify-template`,
-   `diagnose-practice` y `tune-motion`.
-6. **Documentar** en `docs/AVATAR-DECISIONES.md` solo lo que la seña haya
-   enseñado de nuevo (numeración A35 en adelante), y actualizar la tabla de arriba.
+5. **Plantilla de reconocimiento.** Todo con `npx vite-node` desde la raíz:
+   - Agrega el video al mapa `VIDEOS` de `tools/content/diagnose-practice.mjs`
+     y al mapa `SLUGS` de `tools/content/stress-sign.mjs` (hoy solo tienen
+     Gracias, Por favor, Hola y Buenos días).
+   - `tools/content/build-templates.mjs courtesy --only <TODAS las señas revisadas>`.
+     `--only` **reemplaza el bundle entero**: si listas solo la nueva, borras
+     las plantillas de las demás. Confirma que el log diga la mano correcta.
+     **No es reproducible** (D41): cada corrida da cuadros algo distintos. Deja
+     las plantillas ya aceptadas como están en git y copia solo la nueva al
+     bundle; compara con `git show HEAD:apps/web/public/templates/lsc-bundled.json`.
+   - `tools/content/diagnose-practice.mjs <signId>`: extrae los frames con el
+     detector de la app (dos manos, ~1 min por cámara, se guardan en caché
+     `*.hands2*.json`) y dice si valida siguiendo la mano.
+   - `tools/content/stress-sign.mjs <signId>`: es el criterio de aceptación (ver la
+     lista de control). Con `--antes` compara contra la forma sin D39.
+6. **Probar en la app:** `/leccion/lsc-cortesia/practica?sign=<signId>&detalle=1`.
+   La práctica dice qué falta (D40), y `detalle=1` muestra el desglose:
+   forma, rotación, lugar y movimiento. Si alguien reporta que no le valida,
+   pide esa línea antes de tocar nada.
+7. **Documentar** en `docs/AVATAR-DECISIONES.md` (A39 en adelante) o en
+   `docs/DECISIONES-TECNICAS.md` (D42 en adelante) solo lo que la seña haya
+   enseñado de nuevo, y actualizar la tabla de arriba.
 
 ## Lista de control de calidad (no des la seña por terminada sin esto)
 
@@ -108,6 +136,25 @@ Captura en `<scratch>` (el scratchpad de la sesión), nunca en el repo:
       0.3, 0.8 y 1.3 s antes y después (`git stash` para el "antes").
 - [ ] **Pruebas:** `cd apps/web && npx vitest run test/avatar-*.test.ts && npx tsc -b && npx oxlint src/avatar`.
 
+### Reconocimiento (no la des por terminada sin esto)
+
+Con `stress-sign.mjs <signId>`, en las dos cámaras (16:9 y 4:3):
+
+- [ ] **Valida:** solo la seña de 0.5× a 1.25×, sosteniendo el final, contacto
+      breve, más abajo, centrada, mano inclinada ±15°/±30°, palma girada ±30°,
+      dedos relajados, pulgar abierto, 12 cuadros por segundo y temblor alto.
+- [ ] **No valida:** la mano quieta 3 s, y ninguna otra seña con esta como objetivo
+      ni esta con otra como objetivo. Anota el máximo: hoy es 0.58 (Buenos días
+      a 0.6× con Hola como objetivo), contra el umbral de 0.60. Excepción
+      aceptada: Buenos días con Gracias como objetivo valida, porque contiene su
+      movimiento (D41).
+- [ ] **Las demás señas siguen igual:** corre `stress-sign` también en Hola, Por
+      favor y Gracias.
+- [ ] Si algo falla, **mira el desglose** (forma × lugar × movimiento, rotación,
+      desplazamiento) antes de cambiar nada. **No bajes el umbral** (0.60):
+      busca qué mide mal.
+- [ ] Pruebas: `cd packages/cv-model && npx vitest run && npx tsc --noEmit`.
+
 ## Lo que ya está resuelto en el pipeline (no lo rehagas)
 
 | Problema visto | Dónde se resolvió |
@@ -127,9 +174,18 @@ Captura en `<scratch>` (el scratchpad de la sesión), nunca en el repo:
 | Codo alto y antebrazo horizontal con la mano en la cara | la mano gira sobre la yema, elegido junto con el brazo (A35) |
 | Mano que se va al costado con dos manos encimadas | `palmUp`: orientación registrada, sin usar la detección (A36) |
 | Latigazo al girar la palma hacia arriba | giro del antebrazo en rango anatómico (A36) |
+| La mano cambia de configuración a mitad de la seña | `handshapeSpan` (A38) |
+| Tirón en la muñeca al soltar la cara | `faceContact` que termina con la mano quieta (A38) |
 | Manos cortadas en el borde de abajo | encuadre desde cadera + 0.1 torsos (A37) |
 | Plantilla que sale de la mano de apoyo | `hand` registrada en la seña (A37) |
 | Torso de maniquí | respiración (A34) |
+| Reconocimiento: la práctica toma la mano de apoyo al encimar las manos | dos manos y `HandTracker` con la mano registrada (D38) |
+| Reconocimiento: la etiqueta Left/Right se voltea al tocarse las manos | el seguimiento mantiene la etiqueta del inicio (D38) |
+| Reconocimiento: inclinar la mano 15° tumba la seña | forma sin rotación y orientación con zona muerta de 25° (D39) |
+| Reconocimiento: "no me reconoce" sin saber por qué | indicación de qué falta y `?detalle=1` (D40) |
+| Reconocimiento: la seña pide los movimientos de preparación del video | plantilla recortada al `window` de la animación |
+| Reconocimiento: la mano quieta valida | compuerta de movimiento (D36) |
+| Reconocimiento: la seña valida hecha en cualquier lugar | compuerta de lugar respecto a la cara (D37) |
 
 ## Trampas conocidas
 
@@ -146,6 +202,14 @@ Captura en `<scratch>` (el scratchpad de la sesión), nunca en el repo:
   siempre está "dentro": por eso solo se prueba el último cuarto del brazo (A30).
 - La cara no se extrae del video: MediaPipe marca sonrisa durante un puchero (A27).
 - No cortes el tramo antes de suavizar: deforma el arranque (A17).
+- Reconocimiento: velocidad, sostener la posición, apoyar más abajo o centrar
+  la seña **no** fueron causa de fallos (medido con `stress-sign`). Antes de
+  culpar al tiempo o al lugar, mira la rotación y la forma en el desglose.
+- Reconocimiento: la palma abajo donde la seña va palma arriba (o al revés)
+  debe seguir fallando; es un error real. Si la animación del avatar no deja
+  clara la palma, arréglalo en el avatar (`palmUp`), no en el reconocimiento.
+- `tune-motion.mjs` todavía lee los cachés viejos de una mano
+  (`*.handlandmarker*.json`); los de dos manos son `*.hands2*.json`.
 - Cuando algo se vea mal, mídelo antes de ajustar a ojo. Cada corrección
   documentada salió de medir: posiciones con el gancho, `check-contacts` y
   `measure-smoothness`.

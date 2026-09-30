@@ -154,6 +154,8 @@ export interface RetargetContext {
   armScale: Record<Side, number>;
   /** Configuración manual registrada por mano, si la seña la fija. */
   handshape?: Partial<Record<Side, Handshape>>;
+  /** Tramo (s del video) en que vale la configuración registrada; sin él, toda la seña. */
+  handshapeSpan?: Partial<Record<Side, [number, number]>>;
   /** Tramos (s del video) en que la yema del dedo medio toca la cara (A35). */
   faceContact?: Partial<Record<Side, [number, number]>>;
   /** Tramos (s del video) en que la mano va con la palma hacia arriba (A36). */
@@ -447,7 +449,7 @@ function retargetArm(
   // Los dedos no dependen del brazo (la mano termina con la orientación
   // observada, sea cual sea el codo): se resuelven primero para probar la
   // colisión donde de verdad quedan y para saber dónde queda la yema.
-  if (qHandDetected) retargetFingers(hand, side, qHandDetected, rig, out, ctx.handshape?.[side]);
+  if (qHandDetected) retargetFingersInSpan(hand, side, qHandDetected, ctx, out, frame.t);
   const contact = qHandDetected ? faceContactTarget(frame, side, ctx, qHandDetected, out) : null;
   const handLocalPoints = qHandDetected ? handSurfacePoints(rig, side, out) : null;
   // Adelantar la mano despega la yema de la cara: con contacto registrado
@@ -681,6 +683,35 @@ function handSurfacePoints(rig: AvatarRig, side: Side, out: BoneRotations): THRE
   }
   points.push(...handChainPositions(rig, side, ['ThumbMetacarpal', 'ThumbProximal', 'ThumbDistal'], out).slice(2));
   return points;
+}
+
+/**
+ * Dedos con la configuración registrada solo en su tramo, si lo tiene. En
+ * Buenos días la mano derecha va plana en la boca y después abierta, con los
+ * dedos separados: fijar `plana` en toda la seña juntaba los dedos del "día".
+ * En el borde del tramo se mezclan los dedos detectados con los registrados,
+ * con la misma rampa que los demás tramos (spanWeight), para que no salten.
+ */
+function retargetFingersInSpan(
+  hand: number[][] | null,
+  side: Side,
+  qHand: THREE.Quaternion,
+  ctx: RetargetContext,
+  out: BoneRotations,
+  t: number,
+): void {
+  const handshape = ctx.handshape?.[side];
+  const span = ctx.handshapeSpan?.[side];
+  const weight = !handshape ? 0 : span ? spanWeight(span, t) : 1;
+  if (weight >= 1 || !hand) {
+    retargetFingers(hand, side, qHand, ctx.rig, out, handshape);
+    return;
+  }
+  retargetFingers(hand, side, qHand, ctx.rig, out);
+  if (weight <= 0) return;
+  const shaped: BoneRotations = new Map();
+  retargetFingers(hand, side, qHand, ctx.rig, shaped, handshape);
+  for (const [bone, q] of shaped) out.set(bone, (out.get(bone) ?? new THREE.Quaternion()).slerp(q, weight));
 }
 
 /**
@@ -1039,6 +1070,8 @@ export interface SignPlayerOptions {
   face?: FaceExpression;
   /** Configuración manual registrada por mano (ver HANDSHAPE_FLEX). */
   handshape?: Partial<Record<Side, Handshape>>;
+  /** Tramo en que vale la configuración registrada (ver retargetFingersInSpan). */
+  handshapeSpan?: Partial<Record<Side, [number, number]>>;
   /** Contacto registrado de la yema con la cara, por mano (ver faceContactTarget). */
   faceContact?: Partial<Record<Side, [number, number]>>;
   /** Palma hacia arriba registrada, por mano (ver palmUpRotation). */
@@ -1066,6 +1099,7 @@ export function createSignPlayer(
     rig,
     armScale: armScales(rig, data.frames),
     handshape: options.handshape,
+    handshapeSpan: options.handshapeSpan,
     faceContact: options.faceContact,
     palmUp: options.palmUp,
   };
