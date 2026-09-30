@@ -389,6 +389,20 @@ Las escenas de aprendiz (0.5×–1.25×, sostener, más abajo, centrada) siguen 
 
 **Por qué 35°:** con la palma abajo en el apoyo de Gracias, la rotación media es de ~45°. Las inclinaciones que sí validan quedan en 30° o menos.
 
+### D41. Buenos días contiene el movimiento de Gracias: se acepta ese falso positivo, en un solo sentido
+
+**Qué:** la plantilla de Buenos días (`lsc-cortesia-0`, mano derecha, 2.6 s) entra al bundle sin tocar el umbral (0.60) ni las plantillas de las demás señas. Con `stress-sign` en las dos cámaras, se queda un falso positivo conocido: **hacer Buenos días con Gracias como objetivo valida** (0.62–0.69).
+
+**Por qué:**
+- La primera parte de Buenos días ("bueno") es el mismo movimiento de la mano derecha que Gracias: plana en la boca y hacia abajo, a la palma izquierda. La plantilla de Gracias (1.4 s) encuentra ese tramo dentro de Buenos días, con forma 0.62–0.69, lugar 1.00 y movimiento 1.00. Siguiendo una sola mano, no hay qué medir que las distinga.
+- **Al revés no pasa, y ese es el caso que importa:** hacer solo Gracias con Buenos días como objetivo da 0.15–0.23, así que media seña compuesta no valida. Quien practica Gracias y hace Buenos días sí hizo el movimiento de Gracias.
+- Buenos días valida en todos los casos de `stress-sign` (0.5× a 1.25×, inclinaciones, 12 fps, temblor; mínimo 0.611). La mano quieta 3 s no valida (≤0.006), y ninguna otra seña valida con Buenos días como objetivo (máximo 0.248).
+- **Cerca del umbral:** Buenos días hecha a 0.6× con Hola como objetivo da 0.583. El "día" (manos que suben y se abren junto a la cabeza) se parece a Hola. No valida, pero conviene vigilarlo si cambia la plantilla de Hola.
+
+**Descartado:** subir el umbral o recortar la plantilla de Gracias. Las dos cosas empeoran Gracias para lo que sí es Gracias, y la semejanza es lingüística. Queda para revisarla con ICAL.
+
+**Aparte:** `build-templates` no es reproducible. Dos corridas seguidas dan plantillas distintas (Hola: 27 contra 18 cuadros; `sourceMs` se mueve ~32 ms), porque la extracción en el navegador no da los mismos cuadros. Por eso las plantillas de Gracias, Por favor y Hola se dejaron como estaban en el bundle, y solo se agregó la nueva.
+
 ---
 
 ## Un párrafo de síntesis

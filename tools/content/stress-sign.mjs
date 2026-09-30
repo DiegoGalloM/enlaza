@@ -26,7 +26,12 @@ const JITTER = Number(process.env.JITTER ?? 0.003);
 /** --antes: forma comparada con el vector crudo, como antes de D39 (para medir el cambio). */
 const BEFORE = process.argv.includes('--antes');
 const CACHE = path.join(repoRoot, 'content', 'ical-2026-09', 'raw-content', 'cache');
-const SLUGS = { 'lsc-cortesia-3': 'gracias', 'lsc-cortesia-4': 'por-favor', 'lsc-cortesia-5': 'hola' };
+const SLUGS = {
+  'lsc-cortesia-3': 'gracias',
+  'lsc-cortesia-4': 'por-favor',
+  'lsc-cortesia-5': 'hola',
+  'lsc-cortesia-0': 'buenos-dias',
+};
 
 const bundle = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'apps/web/public/templates/lsc-bundled.json'), 'utf8'),
