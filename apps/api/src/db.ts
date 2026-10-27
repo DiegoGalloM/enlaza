@@ -70,6 +70,13 @@ export function openDb(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON');
+  // Varias personas a la vez (D50): con WAL, leer no bloquea a quien escribe
+  // un intento; busy_timeout espera en vez de fallar si dos escriben juntas.
+  db.exec('PRAGMA busy_timeout = 5000');
+  if (path !== ':memory:') {
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA synchronous = NORMAL');
+  }
   db.exec(SCHEMA);
   return db;
 }

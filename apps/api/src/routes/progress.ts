@@ -56,10 +56,16 @@ export async function progressRoutes(app: FastifyInstance, { db }: { db: Databas
       percent: row.sign_count === 0 ? 0 : Math.round((row.mastered_count / row.sign_count) * 100),
     }));
 
-    const attemptDates = db
-      .prepare('SELECT created_at FROM attempts WHERE user_id = ?')
-      .all(userId) as unknown as { created_at: string }[];
-    const activeDates = new Set(attemptDates.map((row) => localDate(new Date(row.created_at))));
+    // Una fila por hora con actividad, no por intento (D50): la lista no crece
+    // con cada intento. La hora UTC basta para pasarla al día local.
+    const attemptHours = db
+      .prepare(
+        "SELECT DISTINCT substr(created_at, 1, 13) AS hour FROM attempts WHERE user_id = ?",
+      )
+      .all(userId) as unknown as { hour: string }[];
+    const activeDates = new Set(
+      attemptHours.map((row) => localDate(new Date(`${row.hour}:00:00.000Z`))),
+    );
 
     const today = new Date();
     const streakDays = computeStreak(activeDates, today);

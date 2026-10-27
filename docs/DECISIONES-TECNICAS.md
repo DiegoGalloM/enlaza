@@ -630,6 +630,41 @@ de esta seña.
 - **Bajar la resolución interna del avatar en celulares:** es la decisión A9 (supersampling, mínimo 2×), tomada para que se vean los dedos.
 - **Mover MediaPipe a un Web Worker:** liberaría el hilo principal del todo, pero cambia cómo llegan los cuadros al detector en cada navegador (Safari incluido). Con el ritmo adaptable la página ya no se traba; queda para cuando haga falta.
 
+### D50. Escalabilidad: lo que se rompía al crecer
+
+Se revisó qué deja de funcionar si crecen las señas, las lecciones, las personas o el equipo. Esto se arregló:
+
+**Reconocimiento con muchas señas** (lo más grave):
+- **Qué:** las formas de mano de cada plantilla se calculan una sola vez (antes, en cada comparación), y las de la captura una vez por comparación (antes, una por plantilla). Con más de 16 plantillas dinámicas (`MAX_DTW_CANDIDATES`), DTW se hace solo contra las 16 más cercanas en forma media de la mano, y siempre contra la buscada.
+- **Medido** (una revisión del validador, Gracias, laptop): 5 plantillas, 3.9 → 1.7 ms. 25 plantillas, 17 → 5 ms. **75 plantillas (el currículo completo), 219 ms → 5.3 ms**, con un peor caso de 992 ms → 17 ms. 300 plantillas, 6 ms. Antes, la práctica se habría congelado en un celular al tener plantillas de todo el currículo.
+- **Sin cambios hoy:** con 5 plantillas no se filtra nada. Las 5 señas validan en los mismos tiempos que en D46, a 1× y a 0.5×, en 16:9 y 4:3. Una prueba con 40 plantillas sintéticas verifica que el filtro da el mismo primer lugar que comparar contra todas.
+
+**Catálogo:**
+- **Qué:** `syncCatalog` reemplaza a `seedCatalog`. Antes el catálogo solo se cargaba con la base vacía, así que una lección o seña nueva nunca llegaba a una instalación con datos. Ahora inserta lo nuevo y actualiza lo cambiado, por id, sin tocar el progreso ni `validated`.
+- Las señas de cortesía tienen **id explícito**. Antes el id era la posición en la lista (`lsc-cortesia-5`): insertar una seña antes de Hola le cambiaba el id, y con eso se perdían el progreso de cada persona, su plantilla y su avatar. Una prueba fija los ids de las señas con contenido, y otra verifica que cada plantilla y cada animación apunten a una seña del catálogo.
+
+**API con más personas:**
+- SQLite en modo **WAL** con `busy_timeout`: leer no bloquea a quien guarda un intento, y dos escrituras juntas esperan en vez de fallar.
+- La racha lee **una fila por hora con actividad**, no todos los intentos de la persona.
+- **Producción:** `ENLAZA_JWT_SECRET` es obligatorio con `NODE_ENV=production` (antes había un secreto de desarrollo por defecto en el código). CORS solo para `ENLAZA_CORS_ORIGIN`; sin ella, en producción, solo el mismo dominio. **Límite de 20 intentos de registro e inicio de sesión cada 10 minutos por IP.**
+- **Web:** `VITE_API_URL` para un API en otro dominio, y sesión vencida (401) → vuelve al inicio de sesión. Antes mostraba el error crudo en cada pantalla.
+
+**Equipo:**
+- **CI** (`.github/workflows/ci.yml`): pruebas, lint, build y E2E en cada PR.
+- El E2E usa sus propios puertos (API 3101, web 5199), así que corre con `npm run dev` abierto.
+- Las herramientas de medición leen las señas de un solo mapa (`SIGN_VIDEOS` en `tools/content/common.mjs`).
+
+**Ya escalaba** (sin cambios): la ruta de aprendizaje para cualquier cantidad de lecciones (D47), los idiomas como datos (`languages`), las animaciones del avatar (un archivo por seña, cargado al abrirla), y que el video nunca salga del dispositivo.
+
+**Pendiente, con su límite:**
+- **Una sola instancia del API:** el límite de intentos está en memoria y SQLite es un archivo. Para varias instancias: Postgres o Turso (`db.ts` y los `prepare()` están aislados) y un almacén compartido para el límite. Para el piloto (decenas de personas) alcanza de sobra.
+- **Plantillas en un solo JSON:** con el currículo completo serían ~1 MB. Se puede partir por lección cuando pase.
+- **Quitar una seña del catálogo no la borra de la base** (tiene intentos y progreso). Hay que retirarla a mano.
+
+**Descartado:**
+- **Ids nuevos legibles para todas las señas** (p. ej. `lsc-hola`): habría que migrar el progreso, las plantillas y el avatar. Basta con fijar los que existen y pedir id explícito a las nuevas.
+- **Comparar solo contra las señas de la lección:** el filtro por forma no depende de cómo se arme el currículo, y sigue atrapando a las señas parecidas de otras lecciones.
+
 ---
 
 ## Un párrafo de síntesis

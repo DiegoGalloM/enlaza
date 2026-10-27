@@ -2,7 +2,20 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-const JWT_SECRET = process.env.ENLAZA_JWT_SECRET ?? 'dev-secret-change-me';
+/**
+ * Secreto de los tokens. En producción es obligatorio (D50): con el de
+ * desarrollo, cualquiera que lea el repo podría firmar tokens válidos.
+ */
+function jwtSecret(): string {
+  const secret = process.env.ENLAZA_JWT_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Falta ENLAZA_JWT_SECRET: es obligatorio en producción');
+  }
+  return 'dev-secret-change-me';
+}
+
+const JWT_SECRET = jwtSecret();
 const TOKEN_TTL = '7d';
 
 export function hashPassword(password: string): string {

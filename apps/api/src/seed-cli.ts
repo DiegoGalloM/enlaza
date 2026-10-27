@@ -9,14 +9,14 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { openDb } from './db';
-import { seedCatalog } from './catalog';
+import { syncCatalog } from './catalog';
 import { hashPassword } from './auth';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.ENLAZA_DB_PATH ?? join(here, '..', 'data', 'enlaza.db');
 
 const db = openDb(dbPath);
-seedCatalog(db);
+syncCatalog(db);
 
 const DEMO_EMAIL = 'demo@enlaza.app';
 let user = db.prepare('SELECT id FROM users WHERE email = ?').get(DEMO_EMAIL) as

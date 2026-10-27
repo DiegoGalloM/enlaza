@@ -13,16 +13,18 @@ export default defineConfig({
   },
   webServer: [
     {
+      // Puertos propios (D50): las pruebas corren aunque `npm run dev` esté abierto.
       command: 'npm run start -w @enlaza/api',
-      url: 'http://localhost:3001/api/health',
+      url: 'http://localhost:3101/api/health',
       reuseExistingServer: false,
-      env: { ENLAZA_DB_PATH: ':memory:' },
+      env: { ENLAZA_DB_PATH: ':memory:', PORT: '3101' },
       timeout: 30_000,
     },
     {
       command: 'npm run dev -w @enlaza/web -- --port 5199 --strictPort',
       url: 'http://localhost:5199',
       reuseExistingServer: false,
+      env: { VITE_API_PROXY: 'http://localhost:3101' },
       timeout: 30_000,
     },
   ],

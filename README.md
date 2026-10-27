@@ -37,6 +37,20 @@ npm run dev    # levanta API (:3001) y web (:5173) juntos
 
 Abre http://localhost:5173, entra con la cuenta demo o crea la tuya.
 
+## Producción
+
+| Variable | Dónde | Qué |
+|---|---|---|
+| `NODE_ENV=production` | API | Activa las protecciones de abajo |
+| `ENLAZA_JWT_SECRET` | API | **Obligatoria** en producción: secreto de los tokens |
+| `ENLAZA_CORS_ORIGIN` | API | Dominios que pueden llamar al API, separados por comas (sin ella: solo el mismo dominio) |
+| `ENLAZA_DB_PATH` | API | Archivo SQLite (necesita disco persistente) |
+| `PORT` | API | Puerto (3001 por defecto) |
+| `VITE_API_URL` | build de la web | URL del API si está en otro dominio (vacío: `/api` del mismo dominio) |
+
+El catálogo de lecciones se sincroniza con la base en cada arranque (`syncCatalog`): las señas
+nuevas llegan solas a una base con datos, sin perder el progreso (D50).
+
 ## Cómo funciona la validación de señas
 
 1. **MediaPipe HandLandmarker** (en el navegador) extrae 21 landmarks de la mano por frame.
@@ -57,7 +71,7 @@ pueden exportar/importar como JSON. Es el paso intermedio hasta entrenar un mode
 
 ```bash
 npm test       # unit/integración: cv-model (28), api (27), web (8)
-npm run e2e    # Playwright: registro → lección → práctica → progreso
+npm run e2e    # Playwright: registro → lección → práctica → progreso (puertos 3101/5199)
 ```
 
 La suite de `cv-model` incluye la **regresión de modelo** exigida por el brief: un set fijo de

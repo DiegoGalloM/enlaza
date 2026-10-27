@@ -86,3 +86,35 @@ describe('dynamic classifier', () => {
     expect(ranked[0]!.signId).toBe('word-b');
   });
 });
+
+describe('classifyDynamic con muchas plantillas (D50)', () => {
+  const rng = mulberry32(77);
+  const templates = Array.from({ length: 40 }, (_, k) =>
+    buildDynamicTemplate(
+      `sena-${k}`,
+      randomSequence(rng, 20).map((p) => toFeatureVector(p, 'Right', 1)),
+    ),
+  );
+
+  it('el filtro de candidatas da el mismo primer lugar que comparar contra todas', () => {
+    for (let k = 0; k < templates.length; k += 3) {
+      // La "captura" es la plantilla k con ruido.
+      const capture = templates[k]!.frames.map((f) => f.map((v) => v + (rng() - 0.5) * 0.05));
+      const all = classifyDynamic(capture, templates, { maxCandidates: Infinity });
+      const filtered = classifyDynamic(capture, templates, { alwaysCompare: ['sena-0'] });
+      expect(filtered.length).toBeLessThan(all.length);
+      expect(filtered[0]!.signId).toBe(all[0]!.signId);
+      expect(filtered[0]!.score).toBeCloseTo(all[0]!.score, 10);
+      // La buscada siempre está, aunque no se parezca.
+      expect(filtered.some((r) => r.signId === 'sena-0')).toBe(true);
+    }
+  });
+
+  it('con pocas plantillas compara contra todas, igual que antes', () => {
+    const few = templates.slice(0, 5);
+    const capture = few[2]!.frames;
+    const results = classifyDynamic(capture, few);
+    expect(results).toHaveLength(5);
+    expect(results).toEqual(classifyDynamic(capture, few, { maxCandidates: Infinity }));
+  });
+});

@@ -8,6 +8,16 @@ import type {
 
 const TOKEN_KEY = 'enlaza.token';
 
+/**
+ * Dónde está el API (D50). Vacío: en el mismo dominio que la web (`/api`,
+ * con el proxy de Vite en desarrollo). Si el API se despliega aparte, se
+ * construye la web con VITE_API_URL=https://api.ejemplo.org.
+ */
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+
+/** Evento que avisa que el token venció o dejó de valer: la app vuelve al inicio de sesión. */
+export const SESSION_EXPIRED_EVENT = 'enlaza:sesion-expirada';
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -33,8 +43,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   const body = (await res.json().catch(() => null)) as unknown;
+  if (res.status === 401 && token) {
+    // El token dura 7 días: vencido, la UI mostraba el error crudo en cada
+    // pantalla. Ahora se cierra la sesión y se vuelve a pedir el ingreso.
+    setToken(null);
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
   if (!res.ok) {
     const message =
       body && typeof body === 'object' && 'error' in body

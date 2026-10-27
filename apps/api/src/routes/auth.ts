@@ -19,7 +19,41 @@ interface Credentials {
   displayName?: string;
 }
 
+/**
+ * Límite de intentos de registro e inicio de sesión por IP (D50): sin él,
+ * se pueden probar contraseñas sin fin. En memoria: alcanza para una sola
+ * instancia del API; con varias, hay que moverlo a un almacén compartido.
+ */
+export const AUTH_LIMIT = { max: 20, windowMs: 10 * 60 * 1000 };
+
+export function createRateLimiter({ max, windowMs } = AUTH_LIMIT) {
+  const hits = new Map<string, number[]>();
+  return (key: string, now = Date.now()): boolean => {
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= max) {
+      hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    hits.set(key, recent);
+    // Limpieza ocasional para que el mapa no crezca con IPs que no vuelven.
+    if (hits.size > 10_000) {
+      for (const [k, times] of hits) if (times.every((t) => now - t >= windowMs)) hits.delete(k);
+    }
+    return true;
+  };
+}
+
 export async function authRoutes(app: FastifyInstance, { db }: { db: DatabaseSync }) {
+  const allow = createRateLimiter();
+  app.addHook('onRequest', async (request, reply) => {
+    if (!request.url.startsWith('/api/auth/')) return;
+    if (!allow(request.ip)) {
+      await reply
+        .code(429)
+        .send({ error: 'Demasiados intentos. Espera unos minutos y vuelve a intentarlo.' });
+    }
+  });
   app.post(
     '/api/auth/register',
     { schema: { body: { ...credentialsSchema, required: ['email', 'password', 'displayName'] } } },
