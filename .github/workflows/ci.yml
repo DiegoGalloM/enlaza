@@ -24,6 +24,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # El lockfile viene de Windows: faltan los binarios de Linux (tools/ci/binarios-linux.mjs).
+      - run: node tools/ci/binarios-linux.mjs
       - run: npm test
       - run: npm run lint
       - run: npm run build -w @enlaza/web
