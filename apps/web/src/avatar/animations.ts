@@ -160,6 +160,8 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
     palmUp: { left: [0.6, 1.66], right: [1.5, 1.62] },
     palmDown: { left: [2.3, 2.9], right: [2.3, 2.9] },
     holdUntil: { left: 1.4 },
+    hand: 'right',
+  },
   // Buenos días: seña compuesta, "bueno" + "día". Bueno: mano derecha plana
   // con las yemas en los labios y el mentón (0.47–1.09 s en el video), con la
   // izquierda palma arriba frente al abdomen; luego la derecha baja junto a la

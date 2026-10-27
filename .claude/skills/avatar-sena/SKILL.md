@@ -10,7 +10,7 @@ Una seña nueva casi siempre se hace **registrando datos** en
 `apps/web/src/avatar/animations.ts` (tramo, cara, configuración manual, mano), no
 cambiando el retargeting ni el reconocimiento. El porqué de cada decisión está en
 `docs/AVATAR-DECISIONES.md` (A1–A38) para el avatar y en
-`docs/DECISIONES-TECNICAS.md` (D35–D41) para el reconocimiento. Léelos antes de
+`docs/DECISIONES-TECNICAS.md` (D35–D43) para el reconocimiento. Léelos antes de
 tocar `retarget.ts`, `rig.ts`, `cleanup.ts`, `face.ts` o `packages/cv-model`.
 
 ## Señas pendientes (lección `cortesia`)
@@ -112,8 +112,8 @@ Al terminar una seña, actualiza esta tabla.
    La práctica dice qué falta (D40), y `detalle=1` muestra el desglose:
    forma, rotación, lugar y movimiento. Si alguien reporta que no le valida,
    pide esa línea antes de tocar nada.
-7. **Documentar** en `docs/AVATAR-DECISIONES.md` (A39 en adelante) o en
-   `docs/DECISIONES-TECNICAS.md` (D42 en adelante) solo lo que la seña haya
+7. **Documentar** en `docs/AVATAR-DECISIONES.md` (A40 en adelante) o en
+   `docs/DECISIONES-TECNICAS.md` (D44 en adelante) solo lo que la seña haya
    enseñado de nuevo, y actualizar la tabla de arriba.
 
 ## Lista de control de calidad (no des la seña por terminada sin esto)
@@ -144,17 +144,22 @@ Con `stress-sign.mjs <signId>`, en las dos cámaras (16:9 y 4:3):
 
 - [ ] **Valida:** solo la seña de 0.5× a 1.25×, sosteniendo el final, contacto
       breve, más abajo, centrada, mano inclinada ±15°/±30°, palma girada ±30°,
-      dedos relajados, pulgar abierto, 12 cuadros por segundo y temblor alto.
+      dedos relajados, pulgar abierto, 12 cuadros por segundo, temblor alto y
+      los escenarios de **aprendiz** (varias cosas a la vez, y desde el reposo).
+      La meta es que sea fácil: quien aprende se cansa si tiene que repetir.
 - [ ] **No valida:** la mano quieta 3 s, y ninguna otra seña con esta como objetivo
-      ni esta con otra como objetivo. Anota el máximo: hoy es 0.58 (Buenos días
-      a 0.6× con Hola como objetivo), contra el umbral de 0.60. Excepción
-      aceptada: Buenos días con Gracias como objetivo valida, porque contiene su
-      movimiento (D41).
-- [ ] **Las demás señas siguen igual:** corre `stress-sign` también en Hola, Por
-      favor y Gracias.
+      ni esta con otra como objetivo. Anota el máximo: hoy es 0.586 (Buenos días
+      a 0.6× con Hola como objetivo), contra el umbral de 0.60. Excepciones
+      aceptadas: Buenos días y Buenas tardes con Gracias como objetivo validan,
+      porque contienen su movimiento (D41, D42).
+- [ ] **Las demás señas siguen igual:** corre `stress-sign` también en las
+      demás señas con plantilla.
 - [ ] Si algo falla, **mira el desglose** (forma × lugar × movimiento, rotación,
-      desplazamiento) antes de cambiar nada. **No bajes el umbral** (0.60):
-      busca qué mide mal.
+      desplazamiento) antes de cambiar nada, y busca qué mide mal. El umbral
+      general (0.60) no se baja. Una seña puede llevar **umbral propio**
+      (`THRESHOLDS` en `build-templates.mjs`) solo si queda lejos de todas las
+      demás: el umbral va entre lo más bajo de la seña real y lo más alto de
+      otra seña con esta como objetivo, con margen a los dos lados (D43).
 - [ ] Pruebas: `cd packages/cv-model && npx vitest run && npx tsc --noEmit`.
 
 ## Lo que ya está resuelto en el pipeline (no lo rehagas)
@@ -188,6 +193,8 @@ Con `stress-sign.mjs <signId>`, en las dos cámaras (16:9 y 4:3):
 | Reconocimiento: inclinar la mano 15° tumba la seña | forma sin rotación y orientación con zona muerta de 25° (D39) |
 | Reconocimiento: "no me reconoce" sin saber por qué | indicación de qué falta y `?detalle=1` (D40) |
 | Reconocimiento: la seña pide los movimientos de preparación del video | plantilla recortada al `window` de la animación |
+| Reconocimiento: hecha más lenta o más rápida, desde el reposo, no valida | ventanas de 0.75×, 1× y 1.6× la seña (D43) |
+| Reconocimiento: seña larga que no valida aunque nada se le parece | umbral propio medido (D43) |
 | Reconocimiento: la mano quieta valida | compuerta de movimiento (D36) |
 | Reconocimiento: la seña valida hecha en cualquier lugar | compuerta de lugar respecto a la cara (D37) |
 

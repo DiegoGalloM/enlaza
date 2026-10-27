@@ -3,7 +3,7 @@ import { SessionValidator } from '../src/session';
 import { toFeatureVector } from '../src/normalize';
 import { buildStaticTemplate } from '../src/staticClassifier';
 import { buildDynamicTemplate } from '../src/dynamicClassifier';
-import type { HandFrame, Landmark } from '../src/types';
+import type { ClassifyResult, HandFrame, Landmark } from '../src/types';
 import { jitterPose, mulberry32, randomPose, randomSequence } from './synthetic';
 
 const rng = mulberry32(23);
@@ -105,5 +105,35 @@ describe('SessionValidator (dynamic signs)', () => {
       if (session.feed(frame(pose, i * 66)).status === 'correct') sawCorrect = true;
     });
     expect(sawCorrect).toBe(false);
+  });
+
+  it('scores a sign performed slower than its window on a longer window (D43)', () => {
+    // La seña dura 1.6 s y la ventana de la seña es 1 s: solo la ventana larga
+    // la ve completa. Umbral inalcanzable para ver el puntaje al final.
+    const session = new SessionValidator('hola', 'dynamic', dynTemplates, {
+      windowMs: 1000,
+      checkIntervalMs: 100,
+      dynamicThreshold: 1.01,
+    });
+    let target: ClassifyResult | null = null;
+    seq.forEach((pose, i) => {
+      target = session.feed(frame(jitterPose(pose, rng, 0.002), i * 70)).target ?? target;
+    });
+    expect(target!.detail?.windowMs).toBe(1600);
+  });
+
+  it('uses the threshold of the target template unless one is passed (D43)', () => {
+    const strict = dynTemplates.map((t) => (t.signId === 'hola' ? { ...t, threshold: 0.99 } : t));
+    const run = (options: { dynamicThreshold?: number }) => {
+      const session = new SessionValidator('hola', 'dynamic', strict, {
+        windowMs: 2000,
+        checkIntervalMs: 100,
+        ...options,
+      });
+      seq.forEach((pose, i) => session.feed(frame(jitterPose(pose, rng, 0.002), i * 66)));
+      return session.isDone;
+    };
+    expect(run({})).toBe(false);
+    expect(run({ dynamicThreshold: 0.6 })).toBe(true);
   });
 });

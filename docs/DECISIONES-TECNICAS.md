@@ -440,6 +440,43 @@ de esta seña.
 
 **Aparte:** `build-templates` no es reproducible. Dos corridas seguidas dan plantillas distintas (Hola: 27 contra 18 cuadros; `sourceMs` se mueve ~32 ms), porque la extracción en el navegador no da los mismos cuadros. Por eso las plantillas de Gracias, Por favor y Hola se dejaron como estaban en el bundle, y solo se agregó la nueva.
 
+### D43. Práctica más fácil: varias ventanas de captura y umbral propio de Buenos días
+
+**Qué:**
+- `SessionValidator` compara en cada revisión tres ventanas, de 0.75×, 1× y 1.6× la duración de la seña buscada (`WINDOW_SCALES`), y valida si en alguna la seña buscada queda primera y pasa su umbral. El desglose dice qué ventana dio el puntaje (`detail.windowMs`). "Otra seña" (`retry`) solo se avisa con la ventana de 1×, como antes.
+- Las plantillas pueden traer umbral propio (`DynamicTemplate.threshold`). Lo escribe `build-templates.mjs` desde la tabla `THRESHOLDS`, y si no hay, vale `DYNAMIC_THRESHOLD` (0.60). Hoy solo lo tiene Buenos días: **0.50**.
+- `stress-sign.mjs` suma escenarios de **aprendiz**: varias variaciones a la vez (más lento, dedos sin tensión, mano inclinada, pulgar suelto) y la seña empezando desde el reposo.
+
+**Por qué:** una persona no lograba que Buenos días le validara, ni con buena luz, y pidió que la práctica fuera fácil: quien aprende se cansa si tiene que repetir muchas veces. Con los escenarios de aprendiz se vieron dos cosas:
+- **La ventana fija** (igual a la duración de la plantilla) castiga a quien no va al ritmo del video. Más rápido y desde el reposo, la ventana mete la subida de las manos. Más lento, solo ve un pedazo. Es el límite que quedó pendiente en D42, y afecta más a las señas largas (Buenos días 2.6 s, Buenas tardes 2.2 s).
+- **Las señas compuestas quedan justas.** Buenos días hecha por la misma señante con varias variaciones a la vez da 0.61–0.63, contra un umbral de 0.60. Otra persona, con otro cuerpo y otra mano, queda abajo. Pero ninguna otra seña se le parece: con Buenos días como objetivo, lo más alto es Buenas tardes, con 0.41. Hay lugar para bajarle el umbral sin aceptar otras señas.
+
+**Medido** (`stress-sign.mjs`, 16:9 / 4:3, antes → ahora):
+
+| Escenario | Buenos días | Buenas tardes |
+|---|---|---|
+| Aprendiz: 0.6×, dedos 30%, −15°, pulgar 30° | valida 0.61 (margen 0.01) → valida, margen 0.11 | no 0.58 / 0.59 → **valida** 0.62 / 0.61 |
+| Aprendiz: desde el reposo a 1.25× | no 0.57 / valida 0.63 → **valida** 0.74 | no 0.44 / 0.49 → **valida** 0.80 |
+| Cámara espejada | no 0.57 → valida | no → no |
+| Mano quieta 3 s | no ≤ 0.006 → no ≤ 0.006 | no → no |
+| Otra seña con esta como objetivo (máximo) | 0.41 → 0.41 (umbral 0.50) | 0.53 → 0.53 (umbral 0.60) |
+
+- Gracias, Hola y Por favor siguen validando en todo, y la mano quieta sigue sin validar.
+- Buenos días hecha con Hola como objetivo sube con la ventana larga (video completo 0.38 → 0.53), pero el máximo sigue en 0.586 (a 0.6×), bajo el 0.60 de Hola.
+- `diagnose-practice` (la práctica cuadro a cuadro, desde el reposo): Buenos días valida en todo, en las dos cámaras, siguiendo la mano.
+- Falso positivo nuevo: Buenas tardes en video completo con Gracias como objetivo pasa a validar (0.59 → 0.70). Es la excepción ya aceptada en D42 (Buenas tardes contiene el movimiento de Gracias); antes solo validaba con el tramo.
+
+**Por qué 0.75×, 1× y 1.6×:** 0.75× cubre la seña a 1.25× sin la subida desde el reposo. 1.6× cubre casi toda la seña a 0.6× (en Buenos días: 4.1 s de 4.4 s). Más ventanas cuestan DTW sin cambiar los resultados medidos.
+
+**Por qué 0.50 y solo en Buenos días:** queda a la mitad entre lo más alto de otra seña con Buenos días como objetivo (0.41) y lo más bajo de la seña de aprendiz (0.61). Buenas tardes no puede bajar: Buenos días hecha con Buenas tardes como objetivo da 0.53, así que su umbral no tiene margen. Gracias, Hola y Por favor tampoco lo necesitan.
+
+**Descartado:**
+- **Bajar el umbral general:** con 0.55, Gracias validaría como Buenas tardes (0.587) y Buenos días como Hola (0.586).
+- **Validar sin que la seña buscada quede primera:** dentro de Buenos días, Gracias se encuentra completa (D41), y dejaría pasar media seña.
+- **Avisar "otra seña" con todas las ventanas:** con la ventana corta, un pedazo de una seña compuesta se parece a otra más corta (el "bueno" a Gracias), y el aviso saldría mientras la persona todavía está haciendo bien la seña.
+
+**Límites:** las variaciones siguen saliendo de una sola señante. El umbral de 0.50 hay que confirmarlo con intentos reales (`?detalle=1` en la práctica) y con grabaciones de otras personas (PENDIENTES 1.4).
+
 ---
 
 ## Un párrafo de síntesis

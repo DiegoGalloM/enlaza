@@ -115,7 +115,7 @@ try {
   const detected = cameras['16:9 (como el video)'].frames;
   const withFace = detected.filter((f) => f.face).length;
   console.log(
-    `${signId}: plantilla dinámica, ventana ${template.sourceMs} ms, umbral 0.60\n` +
+    `${signId}: plantilla dinámica, ventana ${template.sourceMs} ms, umbral ${(template.threshold ?? 0.6).toFixed(2)}\n` +
       `HandLandmarker detectó mano en ${detected.filter((f) => f.hands.length > 0).length}/${detected.length} frames, ` +
       `dos manos en ${detected.filter((f) => f.hands.length > 1).length}; ` +
       `mano registrada: ${template.hand ?? 'ninguna'}; ` +

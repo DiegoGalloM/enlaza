@@ -84,6 +84,12 @@ export interface DynamicTemplate {
    */
   sourceMs?: number;
   /**
+   * Umbral propio de la seña (D43). Sin él vale DYNAMIC_THRESHOLD. Solo se
+   * baja en señas que quedan lejos de todas las demás, medido con
+   * tools/content/stress-sign.mjs, y lo escribe build-templates.
+   */
+  threshold?: number;
+  /**
    * Trayectoria de la muñeca (SEQUENCE_LENGTH × [x, y], en largos de mano,
    * centrada; ver motion.ts). Opcional: plantillas sin movimiento se comparan
    * solo por forma.

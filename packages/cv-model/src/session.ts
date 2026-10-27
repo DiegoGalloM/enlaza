@@ -51,6 +51,7 @@ export interface SessionOptions {
   /** How often to run DTW for dynamic signs, in ms. */
   checkIntervalMs?: number;
   staticThreshold?: number;
+  /** Umbral para todas las dinámicas; sin él, cada seña usa el de su plantilla (D43). */
   dynamicThreshold?: number;
   /** Peso del movimiento de la muñeca en señas dinámicas (0 = solo forma). */
   motionWeight?: number;
@@ -64,6 +65,15 @@ export interface SessionOptions {
 
 /** Ventana por defecto cuando la seña no trae duración de origen. */
 const FALLBACK_WINDOW_MS = 2000;
+
+/**
+ * Largos de ventana que se prueban en cada comparación, como fracción de la
+ * ventana de la seña (D43). Quien aprende casi nunca va al ritmo del video:
+ * más lento, la seña no cabe en una ventana del largo de la plantilla y DTW
+ * solo ve un pedazo; más rápido y desde el reposo, la ventana mete la subida
+ * de las manos. Vale la ventana en la que la seña buscada queda mejor.
+ */
+export const WINDOW_SCALES = [0.75, 1, 1.6] as const;
 
 /**
  * La ventana de captura debe durar lo que dura la seña buscada: DTW compara la
@@ -80,6 +90,13 @@ function defaultWindowMs(targetSignId: string, templates: SignTemplate[]): numbe
   return durations.length > 0 ? Math.max(...durations) : FALLBACK_WINDOW_MS;
 }
 
+interface DynamicFrame {
+  vector: number[];
+  timestampMs: number;
+  wrist: WristSample;
+  location: [number, number] | null;
+}
+
 /**
  * Stateful validator for one practice attempt: feed it hand frames as they
  * arrive from the detector, and it decides when the target sign was executed
@@ -90,17 +107,13 @@ export class SessionValidator {
   private readonly targetSignId: string;
   private readonly signType: SignType;
   private readonly templates: SignTemplate[];
-  private readonly opts: Required<SessionOptions>;
+  private readonly opts: Required<Omit<SessionOptions, 'dynamicThreshold'>>;
+  private readonly dynamicThreshold: number | undefined;
 
   private matchStreak = 0;
   private wrongStreak = 0;
   private wrongSignId: string | null = null;
-  private buffer: {
-    vector: number[];
-    timestampMs: number;
-    wrist: WristSample;
-    location: [number, number] | null;
-  }[] = [];
+  private buffer: DynamicFrame[] = [];
   private lastDynamicCheckMs = -Infinity;
   private done = false;
   private readonly tracker: HandTracker;
@@ -120,13 +133,25 @@ export class SessionValidator {
       windowMs: options.windowMs ?? defaultWindowMs(targetSignId, templates),
       checkIntervalMs: options.checkIntervalMs ?? 400,
       staticThreshold: options.staticThreshold ?? STATIC_THRESHOLD,
-      dynamicThreshold: options.dynamicThreshold ?? DYNAMIC_THRESHOLD,
       motionWeight: options.motionWeight ?? MOTION_WEIGHT,
       minMotionRatio: options.minMotionRatio ?? MIN_MOTION_RATIO,
       locationTolerance: options.locationTolerance ?? LOCATION_TOLERANCE,
       rotationTolerant: options.rotationTolerant ?? true,
     };
+    this.dynamicThreshold = options.dynamicThreshold;
     this.tracker = new HandTracker(signHand(targetSignId, templates));
+  }
+
+  /**
+   * Umbral de una seña dinámica: el de las opciones si se pasó; si no, el
+   * propio de su plantilla, y si no trae, DYNAMIC_THRESHOLD (D43).
+   */
+  private thresholdFor(signId: string): number {
+    if (this.dynamicThreshold !== undefined) return this.dynamicThreshold;
+    const own = this.templates.find(
+      (t): t is DynamicTemplate => t.signId === signId && t.type === 'dynamic' && t.threshold !== undefined,
+    );
+    return own?.threshold ?? DYNAMIC_THRESHOLD;
   }
 
   /** True once the target sign has been validated; further frames are ignored. */
@@ -219,7 +244,8 @@ export class SessionValidator {
     location: [number, number] | null,
   ): SessionVerdict {
     this.buffer.push({ vector, timestampMs, wrist, location });
-    const cutoff = timestampMs - this.opts.windowMs;
+    const longest = this.opts.windowMs * Math.max(...WINDOW_SCALES);
+    const cutoff = timestampMs - longest;
     while (this.buffer.length > 0 && this.buffer[0]!.timestampMs < cutoff) {
       this.buffer.shift();
     }
@@ -232,29 +258,49 @@ export class SessionValidator {
     }
     this.lastDynamicCheckMs = timestampMs;
 
-    const templates = this.templates.filter((t) => t.type === 'dynamic');
-    const ranked = classifyDynamic(
-      this.buffer.map((f) => f.vector),
-      templates,
+    // Cada ventana es el final del buffer; se compara contra todas las
+    // plantillas y la seña buscada tiene que quedar primera en esa misma
+    // ventana (D43).
+    let found: { best: ClassifyResult | null; target: ClassifyResult | null } | null = null;
+    let retry: ClassifyResult | null = null;
+    for (const scale of WINDOW_SCALES) {
+      const windowMs = this.opts.windowMs * scale;
+      const frames = this.buffer.filter((f) => f.timestampMs >= timestampMs - windowMs);
+      if (frames.length < 10) continue;
+      const ranked = this.classify(frames).map((r) =>
+        r.detail ? { ...r, detail: { ...r.detail, windowMs } } : r,
+      );
+      const best = ranked[0] ?? null;
+      const target = ranked.find((r) => r.signId === this.targetSignId) ?? null;
+      if (best && best.signId === this.targetSignId && best.score >= this.thresholdFor(best.signId)) {
+        this.done = true;
+        return { status: 'correct', best, target };
+      }
+      // Otra seña completa solo cuenta en la ventana del largo de la buscada,
+      // como antes: en las demás, un pedazo de una seña compuesta se parece a
+      // otra seña más corta.
+      if (scale === 1 && best && best.signId !== this.targetSignId && best.score >= this.thresholdFor(best.signId)) {
+        retry = best;
+      }
+      if (!found || (target?.score ?? 0) > (found.target?.score ?? 0)) found = { best, target };
+    }
+    if (!found) return { status: 'tracking', best: null };
+    if (retry) return { status: 'retry', best: retry, target: found.target };
+    return { status: 'tracking', ...found };
+  }
+
+  private classify(frames: DynamicFrame[]): ClassifyResult[] {
+    return classifyDynamic(
+      frames.map((f) => f.vector),
+      this.templates.filter((t) => t.type === 'dynamic'),
       {
-        motion: motionTrajectory(this.buffer.map((f) => f.wrist)),
+        motion: motionTrajectory(frames.map((f) => f.wrist)),
         motionWeight: this.opts.motionWeight,
         minMotionRatio: this.opts.minMotionRatio,
-        location: locationTrajectory(this.buffer.map((f) => f.location)),
+        location: locationTrajectory(frames.map((f) => f.location)),
         locationTolerance: this.opts.locationTolerance,
         rotationTolerant: this.opts.rotationTolerant,
       },
     );
-    const best = ranked[0] ?? null;
-    const target = ranked.find((r) => r.signId === this.targetSignId) ?? null;
-
-    if (best && best.signId === this.targetSignId && best.score >= this.opts.dynamicThreshold) {
-      this.done = true;
-      return { status: 'correct', best, target };
-    }
-    if (best && best.signId !== this.targetSignId && best.score >= this.opts.dynamicThreshold) {
-      return { status: 'retry', best, target };
-    }
-    return { status: 'tracking', best, target };
   }
 }
