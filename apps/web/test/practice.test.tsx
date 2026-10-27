@@ -88,9 +88,9 @@ function installFakeDetector(): {
   };
 }
 
-function renderPractice() {
+function renderPractice(url = '/leccion/l1/practica?sign=s1') {
   return render(
-    <MemoryRouter initialEntries={['/leccion/l1/practica?sign=s1']}>
+    <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/leccion/:lessonId/practica" element={<Practice />} />
       </Routes>
@@ -206,6 +206,54 @@ describe('Practice', () => {
 
     expect(await screen.findByText(/parece "B"/)).toBeInTheDocument();
     expect(apiMock.recordAttempt).not.toHaveBeenCalled();
+  });
+
+  it('con ?detalle=1 descarga el intento con los frames del detector (D45)', async () => {
+    signInStorage();
+    installTemplates();
+    const detector = installFakeDetector();
+    apiMock.lesson.mockResolvedValue(lessonDetailFixture);
+
+    renderPractice('/leccion/l1/practica?sign=s1&detalle=1');
+    await screen.findByText(/Muestra tu mano/);
+    await waitFor(() =>
+      expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
+    );
+    await act(async () => {
+      detector.emit({ landmarks: poseB, handedness: 'Right', timestampMs: 0, aspect: ASPECT });
+      detector.emit({ landmarks: poseB, handedness: 'Right', timestampMs: 33, aspect: ASPECT });
+    });
+
+    let blob: Blob | null = null;
+    Object.assign(URL, {
+      createObjectURL: vi.fn((b: Blob) => {
+        blob = b;
+        return 'blob:intento';
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    screen.getByRole('button', { name: /Descargar intento/ }).click();
+
+    expect(click).toHaveBeenCalledOnce();
+    const payload = JSON.parse(await blob!.text());
+    expect(payload).toMatchObject({ kind: 'enlaza-intento', signId: 's1' });
+    expect(payload.frames).toHaveLength(2);
+    expect(payload.frames[0]).toMatchObject({ t: 0, aspect: ASPECT, hands: [{ handedness: 'Right' }] });
+    // Las plantillas de esta prueba están en localStorage: grabadas en el dispositivo.
+    expect(screen.getByText(/Plantilla grabada en este dispositivo/)).toBeInTheDocument();
+    click.mockRestore();
+  });
+
+  it('sin ?detalle=1 no ofrece descargar el intento', async () => {
+    signInStorage();
+    installTemplates();
+    installFakeDetector();
+    apiMock.lesson.mockResolvedValue(lessonDetailFixture);
+
+    renderPractice();
+    await screen.findByText(/Muestra tu mano/);
+    expect(screen.queryByRole('button', { name: /Descargar intento/ })).not.toBeInTheDocument();
   });
 
   it('migra al abrir la cámara las plantillas grabadas antes de corregir la proporción', async () => {
