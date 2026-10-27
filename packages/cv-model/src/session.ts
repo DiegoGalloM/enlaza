@@ -371,6 +371,8 @@ export class SessionValidator {
         location: locationTrajectory(frames.map((f) => f.location)),
         locationTolerance: this.opts.locationTolerance,
         rotationTolerant: this.opts.rotationTolerant,
+        // Con muchas plantillas, DTW solo contra las parecidas; la buscada siempre (D50).
+        alwaysCompare: [this.targetSignId],
       },
     );
   }

@@ -13,9 +13,21 @@ export interface AppOptions {
   logger?: boolean;
 }
 
+/**
+ * Orígenes que pueden llamar al API (D50). ENLAZA_CORS_ORIGIN es una lista
+ * separada por comas (p. ej. "https://enlaza.app"). Sin ella: en desarrollo,
+ * cualquiera; en producción, ninguno de otro dominio (web y API en el mismo).
+ */
+function corsOrigin(): boolean | string[] {
+  const list = process.env.ENLAZA_CORS_ORIGIN?.split(',').map((o) => o.trim()).filter(Boolean);
+  if (list && list.length > 0) return list;
+  return process.env.NODE_ENV !== 'production';
+}
+
 export async function buildApp({ db, logger = false }: AppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger });
-  await app.register(cors, { origin: true });
+  // trustProxy: detrás del proxy del hosting, la IP real viene en X-Forwarded-For.
+  const app = Fastify({ logger, trustProxy: true });
+  await app.register(cors, { origin: corsOrigin() });
 
   app.decorateRequest('user');
   app.addHook('onRequest', async (request) => parseAuth(request));

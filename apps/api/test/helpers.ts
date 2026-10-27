@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { openDb } from '../src/db';
-import { seedCatalog } from '../src/catalog';
+import { syncCatalog } from '../src/catalog';
 import { buildApp } from '../src/app';
 
 export async function testApp(): Promise<FastifyInstance> {
   const db = openDb(':memory:');
-  seedCatalog(db);
+  syncCatalog(db);
   return buildApp({ db });
 }
 

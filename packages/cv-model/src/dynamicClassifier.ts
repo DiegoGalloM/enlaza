@@ -1,5 +1,5 @@
 import { euclideanDistance } from './normalize';
-import { handShape, handShapeDistance, orientationAngle } from './orientation';
+import { handShape, handShapeDistance, orientationAngle, type HandShape } from './orientation';
 import type { ClassifyResult, DynamicDetail, DynamicTemplate } from './types';
 
 /** Frames per resampled sequence — all DTW comparisons use this length. */
@@ -31,6 +31,15 @@ export const MOTION_WEIGHT = 0.5;
  */
 export const MIN_MOTION_RATIO = 0.4;
 
+/**
+ * Con más plantillas dinámicas que esto, cada comparación hace DTW solo contra
+ * las más parecidas en forma media de la mano (y siempre contra la buscada).
+ * Medido (D50): sin esto, una revisión con 75 plantillas tardaba ~200 ms en
+ * una laptop, y la práctica se congelaría en un celular con el currículo
+ * completo. Con 16 o menos plantillas no cambia nada.
+ */
+export const MAX_DTW_CANDIDATES = 16;
+
 /** Movimiento (RMS, en largos de mano) por debajo del cual se considera ruido del detector. */
 export const MOTION_NOISE_FLOOR = 0.05;
 
@@ -58,6 +67,13 @@ export interface DynamicMotionOptions {
    * compara el vector crudo, como antes: solo para medir el cambio.
    */
   rotationTolerant?: boolean;
+  /**
+   * Con más plantillas que esto, DTW solo contra las más parecidas en forma
+   * media (D50). Por defecto MAX_DTW_CANDIDATES; Infinity = contra todas.
+   */
+  maxCandidates?: number;
+  /** Señas que siempre se comparan aunque el filtro las deje fuera (la buscada). */
+  alwaysCompare?: string[];
 }
 
 /** Factor de la compuerta de lugar para un error medio dado (1 = sin castigo). */
@@ -141,13 +157,15 @@ export function dtwAlign(
   motionB?: number[][],
   motionWeight = MOTION_WEIGHT,
   rotationTolerant = true,
+  precomputed?: { shapesA?: HandShape[]; shapesB?: HandShape[] },
 ): { distance: number; path: [number, number][]; orientationDeg?: number } {
   const withMotion = motionA !== undefined && motionB !== undefined;
   // Forma de la mano: configuración + orientación con zona muerta (D39). Solo
-  // aplica a vectores de mano (63 valores); otros se comparan tal cual.
+  // aplica a vectores de mano (63 valores); otros se comparan tal cual. Quien
+  // compara una captura contra muchas plantillas pasa las formas ya calculadas.
   const shaped = rotationTolerant && a[0]?.length === 63 && b[0]?.length === 63;
-  const shapesA = shaped ? a.map(handShape) : [];
-  const shapesB = shaped ? b.map(handShape) : [];
+  const shapesA = shaped ? (precomputed?.shapesA ?? a.map(handShape)) : [];
+  const shapesB = shaped ? (precomputed?.shapesB ?? b.map(handShape)) : [];
   const n = a.length;
   const m = b.length;
   const INF = Number.POSITIVE_INFINITY;
@@ -228,6 +246,38 @@ export function locationError(
   return path.length > 0 ? sum / path.length : 0;
 }
 
+/**
+ * Formas de la mano de cada plantilla, calculadas una sola vez: la plantilla
+ * no cambia, y antes se recalculaban en cada comparación (D50).
+ */
+const templateShapes = new WeakMap<number[][], HandShape[]>();
+function shapesOf(frames: number[][]): HandShape[] {
+  let shapes = templateShapes.get(frames);
+  if (!shapes) {
+    shapes = frames.map(handShape);
+    templateShapes.set(frames, shapes);
+  }
+  return shapes;
+}
+
+/** Forma media de una secuencia (configuración sin rotación si se puede): filtro grueso. */
+const templateMeans = { shaped: new WeakMap<number[][], number[]>(), raw: new WeakMap<number[][], number[]>() };
+function meanShape(frames: number[][], shapes?: HandShape[]): number[] {
+  const vectors = shapes ? shapes.map((s) => (s.frame ? s.config : s.raw)) : frames;
+  const mean = new Array<number>(vectors[0]?.length ?? 0).fill(0);
+  for (const v of vectors) for (let i = 0; i < mean.length; i++) mean[i]! += v[i]! / vectors.length;
+  return mean;
+}
+function templateMean(frames: number[][], shaped: boolean): number[] {
+  const cache = shaped ? templateMeans.shaped : templateMeans.raw;
+  let mean = cache.get(frames);
+  if (!mean) {
+    mean = meanShape(frames, shaped ? shapesOf(frames) : undefined);
+    cache.set(frames, mean);
+  }
+  return mean;
+}
+
 /** Map a DTW distance to a similarity score in (0, 1]. */
 export function dtwSimilarity(distance: number): number {
   return 1 / (1 + distance);
@@ -250,8 +300,12 @@ export function classifyDynamic(
     location,
     locationTolerance = LOCATION_TOLERANCE,
     rotationTolerant = true,
+    maxCandidates = MAX_DTW_CANDIDATES,
+    alwaysCompare = [],
   } = options;
   const seq = resampleSequence(frames);
+  const shaped = rotationTolerant && seq[0]?.length === 63;
+  const seqShapes = shaped ? seq.map(handShape) : undefined;
   // Lugar: solo si la captura lo trae (hubo cara) y la plantilla también.
   const seqLocation =
     location && location.length > 0 && Number.isFinite(locationTolerance)
@@ -262,10 +316,14 @@ export function classifyDynamic(
   // forma, como antes.
   const seqMotion = motion && motion.length > 0 ? prepareMotion(motion) : undefined;
   const seqAmount = seqMotion ? motionAmount(seqMotion) : 0;
-  return templates
+  return candidates(templates, seq, seqShapes, maxCandidates, alwaysCompare)
     .map((t) => {
       const templateMotion = seqMotion ? t.motion : undefined;
-      const aligned = dtwAlign(seq, t.frames, seqMotion, templateMotion, motionWeight, rotationTolerant);
+      const tShaped = shaped && t.frames[0]?.length === 63;
+      const aligned = dtwAlign(seq, t.frames, seqMotion, templateMotion, motionWeight, rotationTolerant, {
+        ...(seqShapes ? { shapesA: seqShapes } : {}),
+        ...(tShaped ? { shapesB: shapesOf(t.frames) } : {}),
+      });
       const detail: DynamicDetail = {
         shape: dtwSimilarity(aligned.distance),
         locationFactor: 1,
@@ -288,6 +346,32 @@ export function classifyDynamic(
       return { signId: t.signId, score, detail };
     })
     .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Plantillas contra las que vale la pena hacer DTW: todas si son pocas; si no,
+ * las `max` más cercanas en forma media de la mano, más las de `always`.
+ */
+function candidates(
+  templates: DynamicTemplate[],
+  seq: number[][],
+  seqShapes: HandShape[] | undefined,
+  max: number,
+  always: string[],
+): DynamicTemplate[] {
+  if (templates.length <= max) return templates;
+  const seqMean = meanShape(seq, seqShapes);
+  const ranked = templates
+    .map((t) => ({
+      t,
+      d: t.frames[0]?.length === seq[0]?.length
+        ? euclideanDistance(seqMean, templateMean(t.frames, seqShapes !== undefined))
+        : Infinity,
+    }))
+    .sort((a, b) => a.d - b.d);
+  const keep = new Set(ranked.slice(0, max).map((r) => r.t));
+  for (const t of templates) if (always.includes(t.signId)) keep.add(t);
+  return templates.filter((t) => keep.has(t));
 }
 
 export function buildDynamicTemplate(
