@@ -14,6 +14,7 @@ import type {
   ClassifyResult,
   DynamicTemplate,
   HandFrame,
+  Handedness,
   HandsFrame,
   SignTemplate,
   SignType,
@@ -61,6 +62,12 @@ export interface SessionOptions {
   locationTolerance?: number;
   /** Forma sin la rotación de la mano entera, con orientación aparte (D39). */
   rotationTolerant?: boolean;
+  /**
+   * En dinámicas con mano registrada, seguir también la contraria: una persona
+   * zurda hace la seña en espejo con la izquierda (D44). false = solo la
+   * registrada, como antes.
+   */
+  eitherHand?: boolean;
 }
 
 /** Ventana por defecto cuando la seña no trae duración de origen. */
@@ -98,6 +105,20 @@ interface DynamicFrame {
 }
 
 /**
+ * Una mano seguida con su propia ventana de frames. Con mano registrada hay
+ * dos: la registrada y la contraria (persona zurda, D44).
+ */
+interface Lane {
+  tracker: HandTracker;
+  buffer: DynamicFrame[];
+  lastCheckMs: number;
+  /** Puntaje de la seña buscada en la última comparación: decide qué mano se muestra. */
+  lastTargetScore: number;
+}
+
+const opposite = (hand: Handedness): Handedness => (hand === 'Left' ? 'Right' : 'Left');
+
+/**
  * Stateful validator for one practice attempt: feed it hand frames as they
  * arrive from the detector, and it decides when the target sign was executed
  * correctly. Static signs must be *held* for `holdFrames` consecutive frames;
@@ -113,10 +134,11 @@ export class SessionValidator {
   private matchStreak = 0;
   private wrongStreak = 0;
   private wrongSignId: string | null = null;
-  private buffer: DynamicFrame[] = [];
-  private lastDynamicCheckMs = -Infinity;
   private done = false;
-  private readonly tracker: HandTracker;
+  /** La primera es la mano registrada (o la primera que aparezca, sin registro). */
+  private readonly lanes: Lane[];
+  /** La mano que se muestra como "la que se lee": la de mejor puntaje reciente. */
+  private shownLane = 0;
 
   constructor(
     targetSignId: string,
@@ -137,9 +159,19 @@ export class SessionValidator {
       minMotionRatio: options.minMotionRatio ?? MIN_MOTION_RATIO,
       locationTolerance: options.locationTolerance ?? LOCATION_TOLERANCE,
       rotationTolerant: options.rotationTolerant ?? true,
+      eitherHand: options.eitherHand ?? true,
     };
     this.dynamicThreshold = options.dynamicThreshold;
-    this.tracker = new HandTracker(signHand(targetSignId, templates));
+    const hand = signHand(targetSignId, templates);
+    const hands: (Handedness | undefined)[] = [hand];
+    // Sin mano registrada ya se sigue la que aparezca, sea cual sea.
+    if (hand && signType === 'dynamic' && this.opts.eitherHand) hands.push(opposite(hand));
+    this.lanes = hands.map((h) => ({
+      tracker: new HandTracker(h),
+      buffer: [],
+      lastCheckMs: -Infinity,
+      lastTargetScore: 0,
+    }));
   }
 
   /**
@@ -167,19 +199,48 @@ export class SessionValidator {
     this.matchStreak = 0;
     this.wrongStreak = 0;
     this.wrongSignId = null;
-    this.buffer = [];
-    this.lastDynamicCheckMs = -Infinity;
     this.done = false;
-    this.tracker.reset();
+    this.shownLane = 0;
+    for (const lane of this.lanes) {
+      lane.tracker.reset();
+      lane.buffer = [];
+      lane.lastCheckMs = -Infinity;
+      lane.lastTargetScore = 0;
+    }
   }
 
   /**
    * Frame con todas las manos que ve el detector (D38): se valida solo la que
-   * hace la seña (HandTracker); si no se ve, cuenta como frame vacío.
+   * hace la seña (HandTracker); si no se ve, cuenta como frame vacío. En
+   * dinámicas con mano registrada se sigue también la contraria y basta con
+   * que una de las dos valide (D44).
    */
   feedHands(frame: HandsFrame | null): HandsVerdict {
-    const hand = frame ? this.tracker.pick(frame) : null;
-    return { ...(hand ? this.feed(hand) : this.feedEmpty()), hand };
+    if (this.lanes.length === 1) {
+      const hand = frame ? this.lanes[0]!.tracker.pick(frame) : null;
+      return { ...(hand ? this.feed(hand) : this.feedEmpty()), hand };
+    }
+    if (this.done) {
+      const hand = frame ? this.lanes[this.shownLane]!.tracker.pick(frame) : null;
+      return { status: 'correct', best: null, hand };
+    }
+    const results: HandsVerdict[] = [];
+    for (const lane of this.lanes) {
+      const hand = frame ? lane.tracker.pick(frame) : null;
+      const verdict = hand ? this.feedLane(lane, hand) : this.feedEmpty();
+      if (verdict.status === 'correct') {
+        this.shownLane = this.lanes.indexOf(lane);
+        return { ...verdict, hand };
+      }
+      results.push({ ...verdict, hand });
+    }
+    // Se muestra la mano con mejor puntaje en su última comparación: con una
+    // persona diestra, la registrada; con una zurda, la contraria.
+    this.shownLane = this.lanes.reduce(
+      (shown, lane, i) => (lane.lastTargetScore > this.lanes[shown]!.lastTargetScore ? i : shown),
+      this.shownLane,
+    );
+    return results[this.shownLane]!;
   }
 
   /** Call when the detector reports no hand in the frame. */
@@ -189,12 +250,18 @@ export class SessionValidator {
     return { status: 'waiting', best: null };
   }
 
+  /** Una mano ya elegida, sin seguimiento: en dinámicas cuenta como la registrada. */
   feed(frame: HandFrame): SessionVerdict {
+    return this.feedLane(this.lanes[0]!, frame);
+  }
+
+  private feedLane(lane: Lane, frame: HandFrame): SessionVerdict {
     if (this.done) return { status: 'correct', best: null };
     const vector = toFeatureVector(frame.landmarks, frame.handedness, frame.aspect);
     return this.signType === 'static'
       ? this.feedStatic(vector)
       : this.feedDynamic(
+          lane,
           vector,
           frame.timestampMs,
           wristSample(frame.landmarks, frame.handedness, frame.aspect),
@@ -238,25 +305,23 @@ export class SessionValidator {
   }
 
   private feedDynamic(
+    lane: Lane,
     vector: number[],
     timestampMs: number,
     wrist: WristSample,
     location: [number, number] | null,
   ): SessionVerdict {
-    this.buffer.push({ vector, timestampMs, wrist, location });
+    lane.buffer.push({ vector, timestampMs, wrist, location });
     const longest = this.opts.windowMs * Math.max(...WINDOW_SCALES);
     const cutoff = timestampMs - longest;
-    while (this.buffer.length > 0 && this.buffer[0]!.timestampMs < cutoff) {
-      this.buffer.shift();
+    while (lane.buffer.length > 0 && lane.buffer[0]!.timestampMs < cutoff) {
+      lane.buffer.shift();
     }
 
-    if (
-      timestampMs - this.lastDynamicCheckMs < this.opts.checkIntervalMs ||
-      this.buffer.length < 10
-    ) {
+    if (timestampMs - lane.lastCheckMs < this.opts.checkIntervalMs || lane.buffer.length < 10) {
       return { status: 'tracking', best: null };
     }
-    this.lastDynamicCheckMs = timestampMs;
+    lane.lastCheckMs = timestampMs;
 
     // Cada ventana es el final del buffer; se compara contra todas las
     // plantillas y la seña buscada tiene que quedar primera en esa misma
@@ -265,7 +330,7 @@ export class SessionValidator {
     let retry: ClassifyResult | null = null;
     for (const scale of WINDOW_SCALES) {
       const windowMs = this.opts.windowMs * scale;
-      const frames = this.buffer.filter((f) => f.timestampMs >= timestampMs - windowMs);
+      const frames = lane.buffer.filter((f) => f.timestampMs >= timestampMs - windowMs);
       if (frames.length < 10) continue;
       const ranked = this.classify(frames).map((r) =>
         r.detail ? { ...r, detail: { ...r.detail, windowMs } } : r,
@@ -285,6 +350,7 @@ export class SessionValidator {
       if (!found || (target?.score ?? 0) > (found.target?.score ?? 0)) found = { best, target };
     }
     if (!found) return { status: 'tracking', best: null };
+    lane.lastTargetScore = found.target?.score ?? 0;
     if (retry) return { status: 'retry', best: retry, target: found.target };
     return { status: 'tracking', ...found };
   }

@@ -477,6 +477,31 @@ de esta seña.
 
 **Límites:** las variaciones siguen saliendo de una sola señante. El umbral de 0.50 hay que confirmarlo con intentos reales (`?detalle=1` en la práctica) y con grabaciones de otras personas (PENDIENTES 1.4).
 
+### D44. Personas zurdas: en señas con mano registrada se siguen las dos manos
+
+**Qué:**
+- En las dinámicas con mano registrada (`hand` en la plantilla: Gracias, Buenas tardes, Buenos días), `SessionValidator` sigue también la mano contraria, con su propio `HandTracker` y su propia ventana. Basta con que una de las dos valide. La práctica muestra como "la que se lee" la de mejor puntaje reciente.
+- Las señas sin mano registrada (Hola, Por favor) no cambian: ya seguían la mano que apareciera.
+- `SessionOptions.eitherHand: false` vuelve a seguir solo la registrada, y `stress-sign.mjs --una-mano` mide así el cambio.
+
+**Por qué:** una persona zurda hace la seña en espejo, con la izquierda. Las features ya espejaban la mano izquierda (D38), así que su seña se compara bien contra la plantilla de la derecha. Pero el seguimiento siempre elegía la mano registrada: en Gracias tomaba su mano de apoyo, quieta, y no validaba nunca. Para la cámara, una persona zurda que hace la seña en espejo se ve igual que una cámara que entrega la imagen espejada, así que esto también cierra ese límite de D39.
+
+**Medido** (`stress-sign.mjs`, 16:9 / 4:3, solo la registrada → las dos):
+
+| Escenario | Gracias | Buenas tardes | Buenos días |
+|---|---|---|---|
+| Zurda, en espejo | no 0.48 / 0.50 → **valida** 0.78 | no 0.42 / 0.33 → **valida** 0.71 | valida / no 0.48 → **valida** |
+| Zurda y aprendiz: 0.7×, dedos 20%, 15° | no 0.41 / 0.43 → **valida** 0.73 | no 0.52 / 0.45 → **valida** 0.63 / 0.66 | valida → valida |
+
+- Todo lo que validaba sigue validando, y la mano quieta sigue sin validar.
+- Ningún falso positivo cruza su umbral. El que más sube: Hola hecha con Buenos días como objetivo, 0.32 → 0.42 (umbral 0.50), porque ahora también se compara la mano izquierda.
+
+**Descartado:**
+- **Plantillas espejadas para la izquierda:** no hace falta, las features ya espejan la mano 'Left'.
+- **Elegir la mano por cuál se mueve más:** en Gracias la de apoyo también se mueve al subir, y el criterio ya había fallado al construir plantillas (A37). Seguir las dos y quedarse con la que valide no depende de adivinar.
+
+**Límites:** se probó con la misma señante espejada, no con una persona zurda real. Seguir dos manos duplica el trabajo de DTW en esas señas (dos ventanas de tres largos cada 400 ms); en la práctica no se notó.
+
 ---
 
 ## Un párrafo de síntesis

@@ -10,7 +10,7 @@ Una seña nueva casi siempre se hace **registrando datos** en
 `apps/web/src/avatar/animations.ts` (tramo, cara, configuración manual, mano), no
 cambiando el retargeting ni el reconocimiento. El porqué de cada decisión está en
 `docs/AVATAR-DECISIONES.md` (A1–A38) para el avatar y en
-`docs/DECISIONES-TECNICAS.md` (D35–D43) para el reconocimiento. Léelos antes de
+`docs/DECISIONES-TECNICAS.md` (D35–D45) para el reconocimiento. Léelos antes de
 tocar `retarget.ts`, `rig.ts`, `cleanup.ts`, `face.ts` o `packages/cv-model`.
 
 ## Señas pendientes (lección `cortesia`)
@@ -113,7 +113,7 @@ Al terminar una seña, actualiza esta tabla.
    forma, rotación, lugar y movimiento. Si alguien reporta que no le valida,
    pide esa línea antes de tocar nada.
 7. **Documentar** en `docs/AVATAR-DECISIONES.md` (A40 en adelante) o en
-   `docs/DECISIONES-TECNICAS.md` (D44 en adelante) solo lo que la seña haya
+   `docs/DECISIONES-TECNICAS.md` (D46 en adelante) solo lo que la seña haya
    enseñado de nuevo, y actualizar la tabla de arriba.
 
 ## Lista de control de calidad (no des la seña por terminada sin esto)
@@ -195,6 +195,7 @@ Con `stress-sign.mjs <signId>`, en las dos cámaras (16:9 y 4:3):
 | Reconocimiento: la seña pide los movimientos de preparación del video | plantilla recortada al `window` de la animación |
 | Reconocimiento: hecha más lenta o más rápida, desde el reposo, no valida | ventanas de 0.75×, 1× y 1.6× la seña (D43) |
 | Reconocimiento: seña larga que no valida aunque nada se le parece | umbral propio medido (D43) |
+| Reconocimiento: persona zurda (o cámara espejada) no valida señas con mano registrada | se siguen las dos manos (D44) |
 | Reconocimiento: la mano quieta valida | compuerta de movimiento (D36) |
 | Reconocimiento: la seña valida hecha en cualquier lugar | compuerta de lugar respecto a la cara (D37) |
 

@@ -13,6 +13,7 @@
  * forma × lugar × movimiento, y la ventana que lo dio.
  * --antes: compara la forma como antes de D39 (vector crudo, sin separar la
  * orientación), para medir el cambio.
+ * --una-mano: sigue solo la mano registrada, como antes de D44.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,6 +26,8 @@ const signId = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 'lsc-co
 const JITTER = Number(process.env.JITTER ?? 0.003);
 /** --antes: forma comparada con el vector crudo, como antes de D39 (para medir el cambio). */
 const BEFORE = process.argv.includes('--antes');
+/** --una-mano: seguir solo la mano registrada, como antes de D44 (para medir el cambio). */
+const ONE_HAND = process.argv.includes('--una-mano');
 const CACHE = path.join(repoRoot, 'content', 'ical-2026-09', 'raw-content', 'cache');
 const SLUGS = {
   'lsc-cortesia-1': 'buenas-tardes',
@@ -117,6 +120,7 @@ function build(result, plan, shift = () => [0, 0], { mod, fps = 30, jitter = JIT
 function replay(target, events) {
   const validator = new SessionValidator(target, 'dynamic', bundle.templates, {
     rotationTolerant: !BEFORE,
+    eitherHand: !ONE_HAND,
   });
   let best = null;
   let validated = false;
@@ -246,7 +250,10 @@ for (const [camera, result] of Object.entries(own)) {
     ['pulgar abierto 30°', sign(), undefined, { mod: thumbOut(30) }],
     ['cámara a 12 cuadros por segundo', sign(), undefined, { fps: 12 }],
     ['temblor alto (0.008)', sign(), undefined, { jitter: 0.008 }],
-    ['cámara espejada', sign(), undefined, { mirror: true }],
+    // Una persona zurda hace la seña en espejo con la izquierda: la cámara ve
+    // lo mismo que con la imagen espejada (D44).
+    ['zurda (en espejo) o cámara espejada', sign(), undefined, { mirror: true }],
+    ['zurda, aprendiz: 0.7×, dedos 20%, 15°', sign(0.7), undefined, { mirror: true, mod: compose(relaxed(0.2), inPlane(15)) }],
     // Quien aprende junta varias cosas a la vez: más lento, dedos sin tensión,
     // la mano algo inclinada y el pulgar suelto.
     ['aprendiz: 0.7×, dedos 20%, 15°, pulgar 20°', sign(0.7), undefined, { mod: compose(relaxed(0.2), inPlane(15), thumbOut(20)) }],
