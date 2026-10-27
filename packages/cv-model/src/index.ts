@@ -10,3 +10,4 @@ export * from './location';
 export * from './hands';
 export * from './orientation';
 export * from './feedback';
+export * from './feedbackGate';

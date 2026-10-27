@@ -122,6 +122,15 @@ export function Practice() {
     ? signs.find((s) => !s.mastered && s.id !== currentSign.id)
     : null;
 
+  // Pasada la gracia de intento (D46), y solo entonces, se dice que la seña
+  // aún no sale: en amarillo, nombrando la seña que se reconoció si hubo una.
+  const nudge =
+    currentSign !== null && session.status !== 'correct' && session.feedbackOpen;
+  const identifiedGloss =
+    session.identifiedSignId && session.identifiedSignId !== currentSign?.id
+      ? glossById.get(session.identifiedSignId) ?? null
+      : null;
+
   if (!currentSign) {
     return (
       <div className={styles.page}>
@@ -154,7 +163,7 @@ export function Practice() {
           className={[
             styles.videoFrame,
             session.status === 'correct' ? styles.videoFrameCorrect : '',
-            session.status === 'retry' ? styles.videoFrameRetry : '',
+            nudge ? styles.videoFrameNudge : '',
           ]
             .filter(Boolean)
             .join(' ')}
@@ -177,15 +186,13 @@ export function Practice() {
               {session.finalScore !== null &&
                 ` · ${SCORE_LEVEL_LABEL[scoreLevel(session.finalScore, currentSign.signType)]}`}
             </div>
-          ) : session.status === 'retry' ? (
-            <div className={`${styles.statusPill} ${styles.statusRetry}`}>
-              Casi
-              {session.best && glossById.get(session.best.signId)
-                ? ` — parece "${glossById.get(session.best.signId)}"`
-                : ''}
-              . Revisa la forma y vuelve a intentarlo.
+          ) : nudge ? (
+            <div className={`${styles.statusPill} ${styles.statusNudge}`} role="status">
+              {identifiedGloss
+                ? `Se parece a "${identifiedGloss}" — intenta otra vez ${currentSign.gloss}`
+                : `Aún no reconocemos ${currentSign.gloss} — sigue intentando, sin prisa`}
             </div>
-          ) : session.status === 'tracking' ? (
+          ) : session.status === 'tracking' || session.status === 'retry' ? (
             <div className={styles.statusPill}>
               Te vemos — haz la seña {currentSign.gloss}
               {currentSign.signType === 'static' ? ' y mantenla un momento' : ''}
@@ -195,10 +202,16 @@ export function Practice() {
           )}
         </div>
 
-        {session.status !== 'correct' && session.attempt && (
-          <p className={styles.hint} role="status">
-            {session.attempt.feedback.message}
-          </p>
+        {nudge && (
+          <div className={styles.nudge}>
+            {session.attempt && <p className={styles.hint}>{session.attempt.feedback.message}</p>}
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/leccion/${lessonId}?sign=${currentSign.id}`)}
+            >
+              Ver la seña otra vez
+            </Button>
+          </div>
         )}
         {showDetail && session.attempt?.result.detail && (
           <p className={styles.detail}>

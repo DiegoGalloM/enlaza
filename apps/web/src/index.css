@@ -32,6 +32,11 @@
   --color-pink: #f4a9c4;
   --color-pink-chip-bg: #4a2436;
 
+  /* Avisos amables de la práctica (D46): amarillo, no rojo, para no frustrar. */
+  --color-yellow: #f2d17c;
+  --color-yellow-chip-bg: #463a1a;
+  --color-yellow-chip-text: #f7df9f;
+
   --color-locked-dot: #4a505a;
   --color-locked-border: #3a3f48;
 
