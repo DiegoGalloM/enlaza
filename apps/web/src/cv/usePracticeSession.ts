@@ -9,6 +9,7 @@ import type {
   SignType,
 } from '@enlaza/cv-model';
 import { cameraAspect, createDetector } from './detector';
+import type { LightHint } from './lighting';
 import { legacyTemplateIds, mergeTemplates, migrateLegacyTemplates } from './templates';
 
 export type CameraState = 'starting' | 'ready' | 'error';
@@ -42,6 +43,8 @@ interface PracticeSession {
   feedbackOpen: boolean;
   /** Otra seña que se reconoció hace poco, para nombrarla en el aviso (D46). */
   identifiedSignId: string | null;
+  /** Aviso de luz sostenido (poca luz, contraluz, imagen quemada), o null (D48). */
+  lightHint: LightHint;
   /**
    * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
    * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
@@ -177,6 +180,7 @@ export function usePracticeSession(
   const [attempt, setAttempt] = useState<PracticeSession['attempt']>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [identifiedSignId, setIdentifiedSignId] = useState<string | null>(null);
+  const [lightHint, setLightHint] = useState<LightHint>(null);
   const validatorRef = useRef<SessionValidator | null>(null);
   const gateRef = useRef<FeedbackGate | null>(null);
   /** Resultados recientes de la seña buscada, para la indicación de qué corregir. */
@@ -264,6 +268,7 @@ export function usePracticeSession(
     setAttempt(null);
     setFeedbackOpen(false);
     setIdentifiedSignId(null);
+    setLightHint(null);
     recentTargets.current = [];
     recording.current = [];
     setCameraState('starting');
@@ -315,7 +320,7 @@ export function usePracticeSession(
         const gate = new FeedbackGate(feedbackGraceMs(signType, validator.windowMs));
         gateRef.current = gate;
         setHasTemplate(validator.hasTemplates());
-        await detector.start(video, onFrame(validator, gate));
+        await detector.start(video, onFrame(validator, gate), (light) => setLightHint(light.hint));
         if (!cancelled) setCameraState('ready');
       } catch (err) {
         if (!cancelled) {
@@ -357,6 +362,7 @@ export function usePracticeSession(
     attempt,
     feedbackOpen,
     identifiedSignId,
+    lightHint,
     retry,
     downloadAttempt,
   };

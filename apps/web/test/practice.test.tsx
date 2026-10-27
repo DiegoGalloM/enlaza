@@ -319,6 +319,29 @@ describe('Practice', () => {
     expect(euclideanDistance(s1.vector, expected)).toBeLessThan(1e-9);
   });
 
+  it('muestra el consejo de luz que da el detector (D48)', async () => {
+    signInStorage();
+    installTemplates();
+    let reportLight: ((state: { corrected: boolean; hint: 'oscuro' | null }) => void) | undefined;
+    window.__enlazaFakeDetector = () => ({
+      needsCamera: false,
+      aspect: ASPECT,
+      start: async (_video, _onFrame, onLight) => {
+        reportLight = onLight;
+      },
+      stop: () => {},
+    });
+    apiMock.lesson.mockResolvedValue(lessonDetailFixture);
+
+    renderPractice();
+    await waitFor(() => expect(reportLight).toBeDefined());
+    expect(screen.queryByText(/Hay poca luz/)).not.toBeInTheDocument();
+    await act(async () => reportLight!({ corrected: true, hint: 'oscuro' }));
+    expect(screen.getByText(/Hay poca luz/)).toBeInTheDocument();
+    await act(async () => reportLight!({ corrected: false, hint: null }));
+    expect(screen.queryByText(/Hay poca luz/)).not.toBeInTheDocument();
+  });
+
   it('offers the no-validation path when the sign has no template', async () => {
     signInStorage();
     // No templates installed.

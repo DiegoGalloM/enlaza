@@ -4,6 +4,12 @@
   detector.ts: hand_landmarker float16/1, VIDEO, numHands 2, D38) sobre un video del
   repo, para simular lo que vería la cámara. La carga diagnose-practice.mjs.
   Parámetros: ?video=<ruta>&aspect=<ancho/alto de la "cámara", p. ej. 1.3333>
+  Luz (D48, la usa light-stress.mjs):
+    &luz=<oscura|muy-oscura|ruido|sobreexpuesta|contraluz|bajo-contraste>
+      simula esa luz sobre cada cuadro (con ruido de sensor determinista);
+    &corregir=1 aplica la corrección de apps/web/src/cv/lighting.ts antes del
+      detector (las funciones de abajo la replican: si cambia allá, cambiar aquí);
+    &rate=<velocidad de reproducción> (por defecto 0.0625: todos los cuadros).
 -->
 <meta charset="utf-8" />
 <video id="v" muted playsinline></video>
@@ -11,6 +17,95 @@
 <script type="module">
   const params = new URLSearchParams(location.search);
   const aspect = Number(params.get('aspect') ?? 0);
+  const luz = params.get('luz');
+  const corregir = params.get('corregir') === '1';
+  const rate = Number(params.get('rate') ?? 0.0625);
+
+  // --- Réplica de apps/web/src/cv/lighting.ts -----------------------------
+  const DARK_MEAN = 90, MIN_RANGE = 150, TARGET_MEAN = 0.45, MAX_GAIN = 4;
+  const MIN_GAMMA = 0.4, MAX_GAMMA = 1.5;
+  const CENTER = [0.2, 0.8, 0.1, 0.95];
+  function measureLight(data, width, height, step = 1) {
+    const histogram = new Uint32Array(256);
+    let sum = 0, count = 0, frameSum = 0, frameCount = 0;
+    const [x0, x1, y0, y1] = CENTER;
+    for (let y = 0; y < height; y += step) {
+      const inRows = y >= height * y0 && y < height * y1;
+      for (let x = 0; x < width; x += step) {
+        const i = (y * width + x) * 4;
+        const v = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+        frameSum += v; frameCount++;
+        if (inRows && x >= width * x0 && x < width * x1) { histogram[v]++; sum += v; count++; }
+      }
+    }
+    if (count === 0) return { mean: 128, frameMean: 128, lo: 0, hi: 255, clipped: 0 };
+    const percentile = (p) => {
+      const target = count * p; let acc = 0;
+      for (let v = 0; v < 256; v++) { acc += histogram[v]; if (acc >= target) return v; }
+      return 255;
+    };
+    let clipped = 0;
+    for (let v = 250; v < 256; v++) clipped += histogram[v];
+    return { mean: sum / count, frameMean: frameSum / frameCount, lo: percentile(0.02), hi: percentile(0.98), clipped: clipped / count };
+  }
+  function lightCorrection(stats) {
+    const range = stats.hi - stats.lo;
+    if (!(stats.mean < DARK_MEAN || range < MIN_RANGE)) return null;
+    const span = Math.max(range, 255 / MAX_GAIN, 1);
+    const lo = Math.min(stats.lo, 255 - span);
+    const stretchedMean = Math.min(Math.max((stats.mean - lo) / span, 0.02), 0.98);
+    const gamma = Math.min(Math.max(Math.log(TARGET_MEAN) / Math.log(stretchedMean), MIN_GAMMA), MAX_GAMMA);
+    return { lo, hi: lo + span, gamma };
+  }
+  function correctionTable(c) {
+    const table = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) {
+      const x = Math.min(Math.max((v - c.lo) / (c.hi - c.lo), 0), 1);
+      table[v] = Math.round(255 * Math.pow(x, c.gamma));
+    }
+    return table;
+  }
+  function blendCorrection(prev, next, amount = 0.35) {
+    if (!next) return null;
+    if (!prev) return next;
+    const mix = (a, b) => a + (b - a) * amount;
+    return { lo: mix(prev.lo, next.lo), hi: mix(prev.hi, next.hi), gamma: mix(prev.gamma, next.gamma) };
+  }
+  // -------------------------------------------------------------------------
+
+  // Simulación de luz: brillo/contraste por condición + ruido de sensor
+  // gaussiano (PRNG con semilla: dos corridas dan los mismos cuadros).
+  let seed = 12345;
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
+  const SIM = {
+    oscura: { gain: 0.35, offset: 0, noise: 5 },
+    'muy-oscura': { gain: 0.18, offset: 0, noise: 4 },
+    ruido: { gain: 0.8, offset: 0, noise: 18 },
+    sobreexpuesta: { gain: 1.9, offset: 40, noise: 2 },
+    'bajo-contraste': { gain: 0.4, offset: 120, noise: 3 },
+    contraluz: { gain: 0.35, offset: 0, noise: 5, halo: 190 },
+  };
+  function simulate(img) {
+    const sim = SIM[luz];
+    if (!sim) return;
+    const { data, width, height } = img;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Contraluz: ventana brillante alrededor (la persona suele estar al centro).
+        let add = sim.offset;
+        if (sim.halo) {
+          const r = Math.hypot((x / width - 0.5) * 1.6, y / height - 0.45);
+          add += sim.halo * Math.min(Math.max((r - 0.35) / 0.35, 0), 1);
+        }
+        const n = sim.noise * gauss();
+        const i = (y * width + x) * 4;
+        data[i] = data[i] * sim.gain + add + n;
+        data[i + 1] = data[i + 1] * sim.gain + add + n;
+        data[i + 2] = data[i + 2] * sim.gain + add + n;
+      }
+    }
+  }
 
   async function main() {
     const { FilesetResolver, HandLandmarker, FaceDetector } = await import(
@@ -58,16 +153,43 @@
     const cropW = aspect ? Math.min(vw, Math.round(vh * aspect)) : vw;
     canvas.width = cropW;
     canvas.height = vh;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: Boolean(luz || corregir) });
+    let correction = null;
+    let table = null;
+    let lastMeasure = -Infinity;
+    const lightLog = [];
 
     const frames = [];
     let lastTs = 0;
-    video.playbackRate = 0.0625;
+    video.playbackRate = rate;
     await video.play();
     await new Promise((resolve, reject) => {
       const onFrame = (_now, meta) => {
         try {
           ctx.drawImage(video, (vw - cropW) / 2, 0, cropW, vh, 0, 0, cropW, vh);
+          if (luz || corregir) {
+            const img = ctx.getImageData(0, 0, cropW, vh);
+            simulate(img);
+            if (corregir) {
+              // Como la app: medir cada ~250 ms (aquí en tiempo de video) y suavizar.
+              if (meta.mediaTime * 1000 - lastMeasure >= 250) {
+                lastMeasure = meta.mediaTime * 1000;
+                const stats = measureLight(img.data, cropW, vh, 10);
+                correction = blendCorrection(correction, lightCorrection(stats));
+                table = correction ? correctionTable(correction) : null;
+                lightLog.push({ t: meta.mediaTime, ...stats, corrected: Boolean(correction) });
+              }
+              if (table) {
+                const d = img.data;
+                for (let i = 0; i < d.length; i += 4) {
+                  d[i] = table[d[i]]; d[i + 1] = table[d[i + 1]]; d[i + 2] = table[d[i + 2]];
+                }
+              }
+            } else if (lightLog.length === 0 || meta.mediaTime - lightLog[lightLog.length - 1].t >= 0.25) {
+              lightLog.push({ t: meta.mediaTime, ...measureLight(img.data, cropW, vh, 10), corrected: false });
+            }
+            ctx.putImageData(img, 0, 0);
+          }
           const ts = Math.max(Math.round(meta.mediaTime * 1000), lastTs + 1);
           lastTs = ts;
           const r = landmarker.detectForVideo(canvas, ts);
@@ -94,7 +216,9 @@
     });
     landmarker.close();
     faceDetector.close();
-    window.__result = { frames, cropW, height: vh };
+    // ?muestra=1: el último cuadro tal como lo vio el detector (para revisar la simulación).
+    const sample = params.get('muestra') ? canvas.toDataURL('image/jpeg', 0.8) : undefined;
+    window.__result = { frames, cropW, height: vh, light: lightLog, sample };
     window.__done = true;
   }
   main().catch((err) => {
