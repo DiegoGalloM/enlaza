@@ -22,6 +22,7 @@ vi.mock('../src/api/client', () => ({
       this.status = status;
     }
   },
+  SESSION_EXPIRED_EVENT: 'enlaza:sesion-expirada',
   getToken: () => localStorage.getItem('enlaza.token'),
   setToken: (token: string | null) => {
     if (token === null) localStorage.removeItem('enlaza.token');

@@ -1,0 +1,31 @@
+# Pruebas en cada push y PR (D50): unitarias e integración de los tres
+# paquetes, build de la web y el recorrido E2E con Playwright.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Los videos de content/ no hacen falta para las pruebas.
+          sparse-checkout: |
+            /*
+            !content/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build -w @enlaza/web
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e

@@ -22,15 +22,9 @@ import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
-import { faceFromBox } from './common.mjs';
+import { SIGN_VIDEOS, faceFromBox } from './common.mjs';
 
-const VIDEOS = {
-  'lsc-cortesia-5': 'hola',
-  'lsc-cortesia-3': 'gracias',
-  'lsc-cortesia-4': 'por-favor',
-  'lsc-cortesia-0': 'buenos-dias',
-  'lsc-cortesia-1': 'buenas-tardes',
-};
+const VIDEOS = SIGN_VIDEOS;
 const ALL_CONDITIONS = ['normal', 'oscura', 'muy-oscura', 'ruido', 'sobreexpuesta', 'bajo-contraste', 'contraluz'];
 
 const args = process.argv.slice(2);

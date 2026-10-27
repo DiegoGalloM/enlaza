@@ -27,7 +27,7 @@ import path from 'node:path';
 import { createExtractor, repoRoot } from '../avatar/extract-lib.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
-import { faceFromBox } from './common.mjs';
+import { SIGN_VIDEOS, faceFromBox } from './common.mjs';
 
 const args = process.argv.slice(2);
 const signId = args.find((a) => !a.startsWith('--')) ?? 'lsc-cortesia-5';
@@ -36,15 +36,8 @@ const until = Number(
     signAnimationFor(signId)?.window?.[1] ??
     Infinity,
 );
-const VIDEOS = {
-  'lsc-cortesia-4': 'content/ical-2026-09/por-favor.mp4',
-  'lsc-cortesia-5': 'content/ical-2026-09/hola.mp4',
-  'lsc-cortesia-3': 'content/ical-2026-09/gracias.mp4',
-  'lsc-cortesia-1': 'content/ical-2026-09/buenas-tardes.mp4',
-  'lsc-cortesia-0': 'content/ical-2026-09/buenos-dias.mp4',
-};
-const video = VIDEOS[signId];
-if (!video) throw new Error(`Sin video registrado para ${signId}`);
+if (!SIGN_VIDEOS[signId]) throw new Error(`Sin video registrado para ${signId} (SIGN_VIDEOS en common.mjs)`);
+const video = `content/ical-2026-09/${SIGN_VIDEOS[signId]}.mp4`;
 
 const bundle = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'apps/web/public/templates/lsc-bundled.json'), 'utf8'),

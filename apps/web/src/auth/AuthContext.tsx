@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { api, getToken, setToken } from '../api/client';
+import { SESSION_EXPIRED_EVENT, api, getToken, setToken } from '../api/client';
 import type { User } from '../api/types';
 
 const USER_KEY = 'enlaza.user';
@@ -54,6 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(USER_KEY);
     setUser(null);
   }, []);
+
+  // Sesión vencida (401 del API): se cierra y RequireAuth lleva al inicio de sesión.
+  useEffect(() => {
+    window.addEventListener(SESSION_EXPIRED_EVENT, logout);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, logout);
+  }, [logout]);
 
   const value = useMemo(
     () => ({ user, login, register, logout }),

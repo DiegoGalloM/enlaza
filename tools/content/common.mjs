@@ -1,6 +1,20 @@
 import { locationSample, toFeatureVector, wristSample } from '../../packages/cv-model/src/index.ts';
 
 /**
+ * Señas con plantilla de reconocimiento y el video de ICAL del que salen
+ * (content/ical-2026-09/<nombre>.mp4). Un solo lugar para todas las
+ * herramientas de medición (D50): al agregar una seña, se agrega aquí y la
+ * miden diagnose-practice, stress-sign y light-stress.
+ */
+export const SIGN_VIDEOS = {
+  'lsc-cortesia-5': 'hola',
+  'lsc-cortesia-3': 'gracias',
+  'lsc-cortesia-4': 'por-favor',
+  'lsc-cortesia-0': 'buenos-dias',
+  'lsc-cortesia-1': 'buenas-tardes',
+};
+
+/**
  * Elige la mano activa de la seña: la que más recorre en imagen (con la
  * cantidad de frames como desempate). El cv-model es de una sola mano.
  */

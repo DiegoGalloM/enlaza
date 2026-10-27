@@ -20,7 +20,7 @@ import path from 'node:path';
 import { repoRoot } from '../avatar/extract-lib.mjs';
 import { SessionValidator } from '../../packages/cv-model/src/index.ts';
 import { signAnimationFor } from '../../apps/web/src/avatar/animations.ts';
-import { faceFromBox } from './common.mjs';
+import { SIGN_VIDEOS, faceFromBox } from './common.mjs';
 
 const signId = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 'lsc-cortesia-3';
 const JITTER = Number(process.env.JITTER ?? 0.003);
@@ -29,13 +29,7 @@ const BEFORE = process.argv.includes('--antes');
 /** --una-mano: seguir solo la mano registrada, como antes de D44 (para medir el cambio). */
 const ONE_HAND = process.argv.includes('--una-mano');
 const CACHE = path.join(repoRoot, 'content', 'ical-2026-09', 'raw-content', 'cache');
-const SLUGS = {
-  'lsc-cortesia-1': 'buenas-tardes',
-  'lsc-cortesia-3': 'gracias',
-  'lsc-cortesia-4': 'por-favor',
-  'lsc-cortesia-5': 'hola',
-  'lsc-cortesia-0': 'buenos-dias',
-};
+const SLUGS = SIGN_VIDEOS;
 
 const bundle = JSON.parse(
   fs.readFileSync(path.join(repoRoot, 'apps/web/public/templates/lsc-bundled.json'), 'utf8'),
