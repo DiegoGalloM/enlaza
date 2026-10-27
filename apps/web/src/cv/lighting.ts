@@ -2,12 +2,13 @@
  * Luz de la cámara: medir la imagen y, si hace falta, corregirla antes del
  * detector de manos (D48).
  *
- * Con poca luz, contraluz o una imagen lavada, MediaPipe pierde la mano o la
- * encuentra a ratos, y la seña no valida aunque esté bien hecha. Aquí se mide
- * cada ~250 ms una miniatura de la imagen y, si está oscura, lavada o sin
+ * Con poca luz o contraluz, MediaPipe pierde la mano o la encuentra a ratos, y
+ * la seña no valida aunque esté bien hecha. Aquí se mide cada ~250 ms una
+ * miniatura de la imagen y, si la zona de la persona está oscura o sin
  * contraste, se estira su rango (niveles + gamma) con una tabla por píxel
  * antes de pasarla al detector. Con buena luz no se toca nada: la imagen va
- * directo al detector, como antes.
+ * directo al detector, como antes. Una imagen quemada (sobreexpuesta) no se
+ * corrige: se midió que empeoraba la detección; solo se da el aviso.
  *
  * La tabla por píxel (y no `ctx.filter`) es a propósito: Safari no implementa
  * filtros de canvas, y esto corre igual en todos los navegadores.
@@ -47,8 +48,6 @@ export type LightHint = 'oscuro' | 'contraluz' | 'quemado' | null;
  * persona a contraluz (centro en 76) quedaba sin corregir (D48).
  */
 export const DARK_MEAN = 90;
-/** Desde aquí, lavada o sobreexpuesta (la sobreexposición simulada da 175–182). */
-export const BRIGHT_MEAN = 170;
 /** Rango útil mínimo (p98 − p2); menos es una imagen sin contraste (bruma, contraluz). */
 export const MIN_RANGE = 150;
 /** Media a la que se lleva una imagen corregida (≈ la de los videos de referencia). */
@@ -121,7 +120,7 @@ export function measureLight(
  */
 export function lightCorrection(stats: LightStats): LightCorrection | null {
   const range = stats.hi - stats.lo;
-  const needs = stats.mean < DARK_MEAN || stats.mean > BRIGHT_MEAN || range < MIN_RANGE;
+  const needs = stats.mean < DARK_MEAN || range < MIN_RANGE;
   if (!needs) return null;
   // Niveles: el rango real pasa a ocupar todo, sin pasar de la ganancia máxima.
   const span = Math.max(range, 255 / MAX_GAIN, 1);

@@ -22,7 +22,7 @@
   const rate = Number(params.get('rate') ?? 0.0625);
 
   // --- Réplica de apps/web/src/cv/lighting.ts -----------------------------
-  const DARK_MEAN = 90, BRIGHT_MEAN = 170, MIN_RANGE = 150, TARGET_MEAN = 0.45, MAX_GAIN = 4;
+  const DARK_MEAN = 90, MIN_RANGE = 150, TARGET_MEAN = 0.45, MAX_GAIN = 4;
   const MIN_GAMMA = 0.4, MAX_GAMMA = 1.5;
   const CENTER = [0.2, 0.8, 0.1, 0.95];
   function measureLight(data, width, height, step = 1) {
@@ -50,7 +50,7 @@
   }
   function lightCorrection(stats) {
     const range = stats.hi - stats.lo;
-    if (!(stats.mean < DARK_MEAN || stats.mean > BRIGHT_MEAN || range < MIN_RANGE)) return null;
+    if (!(stats.mean < DARK_MEAN || range < MIN_RANGE)) return null;
     const span = Math.max(range, 255 / MAX_GAIN, 1);
     const lo = Math.min(stats.lo, 255 - span);
     const stretchedMean = Math.min(Math.max((stats.mean - lo) / span, 0.02), 0.98);
