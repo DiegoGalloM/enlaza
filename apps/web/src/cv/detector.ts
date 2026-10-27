@@ -1,4 +1,6 @@
 import type { FaceBox, HandsFrame } from '@enlaza/cv-model';
+import type { FaceDetector, HandLandmarker } from '@mediapipe/tasks-vision';
+import { FACE_MODEL_URL, MODEL_URL, WASM_URL, loadModel } from './assets';
 
 /**
  * Recibe todas las manos que ve el detector en cada frame (hasta dos, D38), o
@@ -41,18 +43,6 @@ declare global {
   }
 }
 
-const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.0/wasm';
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
-/**
- * Detector de caras: solo da la caja de la cara, que sirve de referencia para
- * el lugar de la mano (D37). No se analiza la expresión. BlazeFace de corto
- * alcance es el modelo de MediaPipe pensado para cámaras frontales (~230 KB,
- * ~1–2 ms por frame). Las plantillas se construyen con el mismo modelo.
- */
-const FACE_MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
-
 /** Caja de la cara más grande del frame (la persona frente a la cámara), normalizada. */
 function largestFace(
   detections: { boundingBox?: { originX: number; originY: number; width: number; height: number } }[],
@@ -73,25 +63,51 @@ function largestFace(
     : undefined;
 }
 
+/**
+ * Si detectar un cuadro tarda más que esto (promedio), el equipo no da para
+ * todos los cuadros: se procesan menos, para que la página no se trabe (D49).
+ */
+const SLOW_DETECTION_MS = 35;
+/** Nunca menos de 12 cuadros por segundo: las señas validan igual a ese ritmo (D42). */
+const MAX_DETECTION_INTERVAL_MS = 1000 / 12;
+
+type Delegate = 'GPU' | 'CPU';
+
 class MediaPipeDetector implements HandDetector {
   readonly needsCamera = true;
   private running = false;
   private rafId = 0;
 
   async start(video: HTMLVideoElement, onFrame: FrameListener): Promise<void> {
-    const { FilesetResolver, HandLandmarker, FaceDetector } = await import('@mediapipe/tasks-vision');
+    const [{ FilesetResolver, HandLandmarker, FaceDetector }, handModel, faceModel] = await Promise.all([
+      import('@mediapipe/tasks-vision'),
+      loadModel(MODEL_URL),
+      loadModel(FACE_MODEL_URL),
+    ]);
     const vision = await FilesetResolver.forVisionTasks(WASM_URL);
-    const landmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-      runningMode: 'VIDEO',
-      // Dos manos (D38): con una sola, en señas de dos manos (Gracias) MediaPipe
-      // devolvía la que mejor veía y la secuencia mezclaba las dos.
-      numHands: 2,
+    // El modelo sale de la caché del dispositivo si ya se bajó (assets.ts);
+    // si no, MediaPipe lo baja de la URL.
+    const model = (buffer: Uint8Array | null, url: string, delegate: Delegate) =>
+      buffer ? { modelAssetBuffer: buffer, delegate } : { modelAssetPath: url, delegate };
+    // GPU primero; si el navegador no la da (WebGL2 apagado, equipo viejo), CPU.
+    const createLandmarker = (delegate: Delegate) =>
+      HandLandmarker.createFromOptions(vision, {
+        baseOptions: model(handModel, MODEL_URL, delegate),
+        runningMode: 'VIDEO',
+        // Dos manos (D38): con una sola, en señas de dos manos (Gracias) MediaPipe
+        // devolvía la que mejor veía y la secuencia mezclaba las dos.
+        numHands: 2,
+      });
+    let delegate: Delegate = 'GPU';
+    const landmarker = await createLandmarker('GPU').catch((err: unknown) => {
+      console.warn('Detector de manos sin GPU; se usa la CPU', err);
+      delegate = 'CPU';
+      return createLandmarker('CPU');
     });
     // Si el detector de caras no carga, la práctica sigue funcionando: las
     // señas se comparan sin lugar, como antes de D37.
     const faceDetector = await FaceDetector.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: 'GPU' },
+      baseOptions: model(faceModel, FACE_MODEL_URL, delegate),
       runningMode: 'VIDEO',
     }).catch((err: unknown) => {
       console.warn('No se pudo cargar el detector de caras; se valida sin lugar', err);
@@ -100,6 +116,10 @@ class MediaPipeDetector implements HandDetector {
 
     this.running = true;
     let lastVideoTime = -1;
+    let lastDetectionMs = -Infinity;
+    /** Promedio móvil de lo que tarda detectar un cuadro (manos + cara). */
+    let detectionCostMs = 0;
+    let warned = false;
 
     const loop = () => {
       if (!this.running) {
@@ -107,42 +127,68 @@ class MediaPipeDetector implements HandDetector {
         faceDetector?.close();
         return;
       }
-      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+      const now = performance.now();
+      const interval =
+        detectionCostMs > SLOW_DETECTION_MS
+          ? Math.min(detectionCostMs * 1.5, MAX_DETECTION_INTERVAL_MS)
+          : 0;
+      if (
+        video.readyState >= 2 &&
+        video.currentTime !== lastVideoTime &&
+        now - lastDetectionMs >= interval
+      ) {
         lastVideoTime = video.currentTime;
-        const now = performance.now();
-        const result = landmarker.detectForVideo(video, now);
-        const hands = result.landmarks.flatMap((landmarks, i) => {
-          const category = result.handedness[i]?.[0];
-          return category
-            ? [
-                {
-                  landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
-                  handedness: category.categoryName === 'Left' ? ('Left' as const) : ('Right' as const),
-                },
-              ]
-            : [];
-        });
-        if (hands.length > 0) {
-          const face = faceDetector
-            ? largestFace(
-                faceDetector.detectForVideo(video, now).detections,
-                video.videoWidth,
-                video.videoHeight,
-              )
-            : undefined;
-          onFrame({
-            hands,
-            timestampMs: now,
-            aspect: video.videoWidth / video.videoHeight,
-            ...(face ? { face } : {}),
-          });
-        } else {
-          onFrame(null);
+        lastDetectionMs = now;
+        try {
+          this.detect(video, now, landmarker, faceDetector, onFrame);
+        } catch (err) {
+          // Un cuadro que falla no debe detener la práctica: se salta.
+          if (!warned) console.warn('Falló la detección de un cuadro', err);
+          warned = true;
         }
+        detectionCostMs = detectionCostMs * 0.9 + (performance.now() - now) * 0.1;
       }
       this.rafId = requestAnimationFrame(loop);
     };
     this.rafId = requestAnimationFrame(loop);
+  }
+
+  private detect(
+    video: HTMLVideoElement,
+    now: number,
+    landmarker: HandLandmarker,
+    faceDetector: FaceDetector | null,
+    onFrame: FrameListener,
+  ): void {
+    const result = landmarker.detectForVideo(video, now);
+    const hands = result.landmarks.flatMap((landmarks, i) => {
+      const category = result.handedness[i]?.[0];
+      return category
+        ? [
+            {
+              landmarks: landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z })),
+              handedness: category.categoryName === 'Left' ? ('Left' as const) : ('Right' as const),
+            },
+          ]
+        : [];
+    });
+    if (hands.length > 0) {
+      const face = faceDetector
+        ? largestFace(
+            faceDetector.detectForVideo(video, now).detections,
+            video.videoWidth,
+            video.videoHeight,
+          )
+        : undefined;
+      onFrame({
+        hands,
+        timestampMs: now,
+        aspect: video.videoWidth / video.videoHeight,
+        ...(face ? { face } : {}),
+      });
+    } else {
+      onFrame(null);
+    }
   }
 
   stop(): void {
