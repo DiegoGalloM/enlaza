@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SessionValidator } from '../src/session';
+import { SessionValidator, type HandsVerdict } from '../src/session';
 import { toFeatureVector } from '../src/normalize';
 import { buildStaticTemplate } from '../src/staticClassifier';
 import { buildDynamicTemplate } from '../src/dynamicClassifier';
-import type { ClassifyResult, HandFrame, Landmark } from '../src/types';
-import { jitterPose, mulberry32, randomPose, randomSequence } from './synthetic';
+import type { ClassifyResult, HandFrame, HandsFrame, Landmark } from '../src/types';
+import { jitterPose, mirrorPose, mulberry32, randomPose, randomSequence } from './synthetic';
 
 const rng = mulberry32(23);
 const poseA = randomPose(rng);
@@ -135,5 +135,57 @@ describe('SessionValidator (dynamic signs)', () => {
     };
     expect(run({})).toBe(false);
     expect(run({ dynamicThreshold: 0.6 })).toBe(true);
+  });
+});
+
+describe('SessionValidator (seña hecha con la otra mano, D44)', () => {
+  const seq = randomSequence(rng, 24);
+  const other = randomSequence(rng, 24);
+  const templates = [
+    { ...buildDynamicTemplate('sena', seq.map((f) => vec(f)), 1600), hand: 'Right' as const },
+    buildDynamicTemplate('otra', other.map((f) => vec(f)), 1600),
+  ];
+  const still = randomPose(rng);
+  // Persona zurda: la izquierda hace la seña en espejo y la derecha queda quieta, de apoyo.
+  const leftHanded = (session: SessionValidator) => {
+    seq.forEach((pose, i) => {
+      const hands: HandsFrame = {
+        hands: [
+          { landmarks: mirrorPose(pose), handedness: 'Left' },
+          { landmarks: still, handedness: 'Right' },
+        ],
+        timestampMs: i * 66,
+        aspect: 1,
+      };
+      session.feedHands(hands);
+    });
+    return session.isDone;
+  };
+
+  it('valida a una persona zurda', () => {
+    expect(leftHanded(new SessionValidator('sena', 'dynamic', templates, { checkIntervalMs: 100 }))).toBe(true);
+  });
+
+  it('siguiendo solo la mano registrada leía la de apoyo', () => {
+    const session = new SessionValidator('sena', 'dynamic', templates, { checkIntervalMs: 100, eitherHand: false });
+    expect(leftHanded(session)).toBe(false);
+  });
+
+  it('una persona diestra sigue validando con la registrada', () => {
+    const session = new SessionValidator('sena', 'dynamic', templates, { checkIntervalMs: 100 });
+    let hand: HandsVerdict['hand'] = null;
+    seq.forEach((pose, i) => {
+      const verdict = session.feedHands({
+        hands: [
+          { landmarks: mirrorPose(still), handedness: 'Left' },
+          { landmarks: jitterPose(pose, rng, 0.002), handedness: 'Right' },
+        ],
+        timestampMs: i * 66,
+        aspect: 1,
+      });
+      if (verdict.status === 'correct') hand = verdict.hand;
+    });
+    expect(session.isDone).toBe(true);
+    expect(hand!.handedness).toBe('Right');
   });
 });
