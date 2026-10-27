@@ -12,3 +12,15 @@
   flex-direction: column;
   gap: 22px;
 }
+
+@media (max-width: 860px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  /* Deja lugar a la barra de pestañas fija de abajo (Sidebar.module.css). */
+  .content {
+    padding: 20px 16px calc(96px + env(safe-area-inset-bottom));
+    gap: 18px;
+  }
+}

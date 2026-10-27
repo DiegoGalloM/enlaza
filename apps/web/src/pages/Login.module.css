@@ -100,3 +100,10 @@
   padding: 2px 6px;
   border-radius: 6px;
 }
+
+/* iOS amplía la página al enfocar un campo de menos de 16 px (D47). */
+@media (max-width: 640px) {
+  .input {
+    font-size: 16px;
+  }
+}

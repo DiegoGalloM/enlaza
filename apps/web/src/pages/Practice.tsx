@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { useApi } from '../hooks/useApi';
@@ -167,6 +168,7 @@ export function Practice() {
           ]
             .filter(Boolean)
             .join(' ')}
+          style={{ '--camera-aspect': session.aspect } as CSSProperties}
         >
           <video ref={session.videoRef} className={styles.video} playsInline muted />
           <canvas ref={session.canvasRef} className={styles.overlay} width={960} height={540} />

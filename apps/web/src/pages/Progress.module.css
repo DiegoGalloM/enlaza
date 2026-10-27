@@ -253,3 +253,22 @@
   font-size: 13.5px;
   color: #9aa0a9;
 }
+
+@media (max-width: 640px) {
+  .title {
+    font-size: 26px;
+  }
+
+  .row {
+    gap: 16px;
+  }
+
+  .card,
+  .milestoneCard {
+    padding: 18px;
+  }
+
+  .levelCard {
+    gap: 16px;
+  }
+}

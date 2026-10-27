@@ -25,6 +25,12 @@ interface PracticeSession {
   /** Confirmed score when status === 'correct'. */
   finalScore: number | null;
   /**
+   * Proporción (ancho/alto) de la imagen de la cámara, para que el recuadro
+   * la muestre entera y el esqueleto dibujado calce con la mano (D47). Un
+   * celular en vertical suele dar 3:4; una laptop, 16:9.
+   */
+  aspect: number;
+  /**
    * Seña dinámica que aún no valida: el mejor intento reciente de la seña
    * buscada, con su desglose, y qué corregir (D40). null si no hay intento.
    */
@@ -123,6 +129,35 @@ function drawOverlay(
   }
 }
 
+/** Proporción mientras la cámara no abre: la que se le pide en una laptop. */
+const DEFAULT_ASPECT = 16 / 9;
+
+/** Lado mayor del lienzo del esqueleto: más no se ve mejor y cuesta más dibujar. */
+const OVERLAY_MAX_SIDE = 960;
+
+/**
+ * Lo que se le pide a la cámara. En un celular en vertical se pide una imagen
+ * vertical (3:4), que encuadra cabeza, pecho y manos sin desperdiciar los
+ * lados; las features no dependen de la proporción (D33). Son valores
+ * "ideal": la cámara entrega lo más cercano que tenga.
+ */
+function cameraConstraints(): MediaTrackConstraints {
+  const portrait =
+    typeof window !== 'undefined' && window.matchMedia?.('(orientation: portrait)').matches;
+  return portrait
+    ? { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 3 / 4 } }
+    : { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 } };
+}
+
+/** El lienzo del esqueleto toma la proporción de la cámara (para que calce con la mano). */
+function sizeOverlay(canvas: HTMLCanvasElement | null, aspect: number): void {
+  if (!canvas) return;
+  const width = aspect >= 1 ? OVERLAY_MAX_SIDE : Math.round(OVERLAY_MAX_SIDE * aspect);
+  const height = aspect >= 1 ? Math.round(OVERLAY_MAX_SIDE / aspect) : OVERLAY_MAX_SIDE;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+}
+
 /** Tiempo durante el que se considera "reciente" un intento para la indicación, en ms. */
 const FEEDBACK_WINDOW_MS = 2500;
 
@@ -138,6 +173,7 @@ export function usePracticeSession(
   const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
   const [attempt, setAttempt] = useState<PracticeSession['attempt']>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [identifiedSignId, setIdentifiedSignId] = useState<string | null>(null);
@@ -234,6 +270,7 @@ export function usePracticeSession(
     setCameraError(null);
 
     const detector = createDetector();
+    const videoEl = videoRef.current;
     let stream: MediaStream | null = null;
     let cancelled = false;
 
@@ -243,7 +280,7 @@ export function usePracticeSession(
       try {
         if (detector.needsCamera) {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 } },
+            video: cameraConstraints(),
             audio: false,
           });
           if (cancelled) {
@@ -258,6 +295,17 @@ export function usePracticeSession(
         const aspect = cameraAspect(video, detector);
         const migrated = aspect ? migrateLegacyTemplates(aspect) : [];
         if (cancelled) return;
+        if (aspect) {
+          setAspect(aspect);
+          sizeOverlay(canvasRef.current, aspect);
+        }
+        // Al girar el celular la cámara cambia de proporción a media práctica.
+        video.onresize = () => {
+          const current = cameraAspect(video, detector);
+          if (!current) return;
+          setAspect(current);
+          sizeOverlay(canvasRef.current, current);
+        };
         const validator = new SessionValidator(
           signId,
           signType,
@@ -287,6 +335,7 @@ export function usePracticeSession(
       cancelled = true;
       validatorRef.current = null;
       gateRef.current = null;
+      if (videoEl) videoEl.onresize = null;
       detector.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
@@ -304,6 +353,7 @@ export function usePracticeSession(
     videoRef,
     canvasRef,
     finalScore,
+    aspect,
     attempt,
     feedbackOpen,
     identifiedSignId,

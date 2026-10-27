@@ -66,6 +66,10 @@ body,
 
 body {
   margin: 0;
+  /* Sin el destello gris al tocar en móviles; el foco visible se mantiene. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background: var(--color-canvas);
   color: var(--color-text);
   font-family: var(--font-body);
