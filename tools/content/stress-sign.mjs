@@ -194,6 +194,12 @@ const thumbOut = (d) =>
     });
   });
 
+/** Varias variaciones a la vez, como las junta quien aprende. */
+const compose =
+  (...mods) =>
+  (landmarks, t, aspect) =>
+    mods.reduce((l, m) => m(l, t, aspect), landmarks);
+
 const [from, to] = signAnimationFor(signId)?.window ?? [0, Infinity];
 const slug = SLUGS[signId];
 const own = { '16:9': load(slug), '4:3': load(slug, '-4x3') };
@@ -202,7 +208,7 @@ const sign = (speed = 1) => [[from, to, (to - from) / speed]];
 const ramp = (a, b, value) => (t) => Math.min(1, Math.max(0, (t - a) / (b - a))) * value;
 
 console.log(
-  `${signId}: umbral 0.60, ventana de la plantilla ${template.sourceMs} ms, tramo ${from}–${to} s, ` +
+  `${signId}: umbral ${(template.threshold ?? 0.6).toFixed(2)}, ventana de la plantilla ${template.sourceMs} ms, tramo ${from}–${to} s, ` +
     `mano ${template.hand ?? 'sin registrar'}, temblor ${JITTER}\n` +
     `Formato: VALIDA puntaje = forma × lugar factor(error en altos de cara) × mov factor(proporción)\n`,
 );
@@ -241,6 +247,13 @@ for (const [camera, result] of Object.entries(own)) {
     ['cámara a 12 cuadros por segundo', sign(), undefined, { fps: 12 }],
     ['temblor alto (0.008)', sign(), undefined, { jitter: 0.008 }],
     ['cámara espejada', sign(), undefined, { mirror: true }],
+    // Quien aprende junta varias cosas a la vez: más lento, dedos sin tensión,
+    // la mano algo inclinada y el pulgar suelto.
+    ['aprendiz: 0.7×, dedos 20%, 15°, pulgar 20°', sign(0.7), undefined, { mod: compose(relaxed(0.2), inPlane(15), thumbOut(20)) }],
+    ['aprendiz: 0.6×, dedos 30%, -15°, pulgar 30°', sign(0.6), undefined, { mod: compose(relaxed(0.3), inPlane(-15), thumbOut(30)) }],
+    ['aprendiz: desde el reposo a 0.7×, dedos 20%', [[0, to, to / 0.7]], undefined, { mod: relaxed(0.2) }],
+    ['aprendiz: desde el reposo a 1.25×', [[0, to, to / 1.25]]],
+    ['aprendiz: 0.6×, dedos 20%, palma 20°, temblor 0.006', sign(0.6), undefined, { mod: compose(relaxed(0.2), yaw(20)), jitter: 0.006 }],
     ['mano quieta en el apoyo 3 s (NO debe validar)', [[end, end, 3]]],
     ['mano quieta en la boca 3 s (NO debe validar)', [[mid - 0.3, mid - 0.3, 3]]],
   ];

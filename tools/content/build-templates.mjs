@@ -61,6 +61,16 @@ const COURTESY = [
   signId: `lsc-cortesia-${i}`,
 }));
 
+/**
+ * Umbral propio de las señas que quedan lejos de todas las demás (D43). Las
+ * que no aparecen usan DYNAMIC_THRESHOLD (0.60). Buenos días: la seña real de
+ * aprendiz queda en 0.61–0.74, y ninguna otra seña pasa de 0.41 con Buenos
+ * días como objetivo (stress-sign.mjs).
+ */
+const THRESHOLDS = {
+  'lsc-cortesia-0': 0.5,
+};
+
 async function buildCourtesy(extractor, wanted) {
   const templates = [];
   for (const { video, signId } of COURTESY.filter((c) => !wanted || wanted.has(c.signId))) {
@@ -95,6 +105,7 @@ async function buildCourtesy(extractor, wanted) {
     // La mano registrada viaja en la plantilla: con dos manos en cuadro, la
     // práctica sigue a esa y no a la de apoyo (D38).
     if (registeredHand) template.hand = appHandedness(registeredHand);
+    if (THRESHOLDS[signId] !== undefined) template.threshold = THRESHOLDS[signId];
     templates.push(template);
     console.log(
       `  ${signId} ← ${path.basename(video)} (mano ${side === 'right' ? 'derecha' : 'izquierda'}, ` +
