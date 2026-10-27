@@ -5,13 +5,19 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { LearningPath } from './pages/LearningPath';
 import { Lesson } from './pages/Lesson';
 import { Progress } from './pages/Progress';
-import { DesignTokens } from './pages/DesignTokens';
 import { Login } from './pages/Login';
 import { Practice } from './pages/Practice';
-import { Calibration } from './pages/Calibration';
-// Carga perezosa: three.js es pesado y solo lo usa la pantalla de prueba del avatar.
+// Carga perezosa: three.js es pesado y solo lo usa la pantalla de prueba del
+// avatar; calibración y tokens son herramientas del equipo, no del flujo de
+// quien aprende (D49).
 const AvatarPoc = lazy(() =>
   import('./pages/AvatarPoc').then((m) => ({ default: m.AvatarPoc })),
+);
+const Calibration = lazy(() =>
+  import('./pages/Calibration').then((m) => ({ default: m.Calibration })),
+);
+const DesignTokens = lazy(() =>
+  import('./pages/DesignTokens').then((m) => ({ default: m.DesignTokens })),
 );
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -26,7 +32,14 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/design-tokens" element={<DesignTokens />} />
+          <Route
+            path="/design-tokens"
+            element={
+              <Suspense fallback={null}>
+                <DesignTokens />
+              </Suspense>
+            }
+          />
           <Route
             path="/avatar-poc"
             element={
@@ -63,7 +76,9 @@ function App() {
             path="/plantillas"
             element={
               <RequireAuth>
-                <Calibration />
+                <Suspense fallback={null}>
+                  <Calibration />
+                </Suspense>
               </RequireAuth>
             }
           />

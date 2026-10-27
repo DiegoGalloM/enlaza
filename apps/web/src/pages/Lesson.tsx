@@ -1,10 +1,11 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
 import { hasSignAnimation } from '../avatar/animations';
+import { warmUpDetector } from '../cv/assets';
 import styles from './Lesson.module.css';
 
 // Carga perezosa: three.js solo se descarga en lecciones con avatar.
@@ -21,6 +22,10 @@ export function Lesson() {
   const { data, loading, error } = useApi(() => api.lesson(lessonId), [lessonId]);
   const [slowMotion, setSlowMotion] = useState(false);
   const [mirrored, setMirrored] = useState(false);
+
+  // Mientras la persona mira al avatar, se baja el detector de manos para que
+  // la práctica abra la cámara sin esperar la descarga (D49).
+  useEffect(() => warmUpDetector(), []);
 
   if (loading || error || !data) {
     return (

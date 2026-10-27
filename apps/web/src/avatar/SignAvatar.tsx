@@ -94,6 +94,16 @@ export function SignAvatar({
     const observer = new ResizeObserver(() => {
       if (scene && canvas.clientWidth > 0) scene.resize(canvas.clientWidth, canvas.clientHeight);
     });
+    // Fuera de pantalla (en el celular, al bajar al botón de practicar) no se
+    // dibuja: ahorra batería y GPU (D49). La seña sigue su tiempo al volver.
+    let visible = true;
+    const visibility =
+      typeof IntersectionObserver === 'undefined'
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            visible = entry?.isIntersecting ?? true;
+          });
+    visibility?.observe(canvas);
 
     Promise.all([
       createAvatarScene(canvas),
@@ -137,10 +147,12 @@ export function SignAvatar({
         const loop = (now: number) => {
           const delta = (now - last) / 1000;
           last = now;
-          signTime += delta * speedRef.current;
-          player.update(freezeRef.current ?? signTime);
-          scene!.setCameraYaw(yawRef.current);
-          scene!.render(delta);
+          if (visible) {
+            signTime += delta * speedRef.current;
+            player.update(freezeRef.current ?? signTime);
+            scene!.setCameraYaw(yawRef.current);
+            scene!.render(delta);
+          }
           rafId = requestAnimationFrame(loop);
         };
         rafId = requestAnimationFrame(loop);
@@ -154,6 +166,7 @@ export function SignAvatar({
       disposed = true;
       cancelAnimationFrame(rafId);
       observer.disconnect();
+      visibility?.disconnect();
       scene?.dispose();
     };
   }, [signId]);

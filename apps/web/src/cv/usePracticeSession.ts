@@ -9,6 +9,7 @@ import type {
   SignType,
 } from '@enlaza/cv-model';
 import { cameraAspect, createDetector } from './detector';
+import type { LightHint } from './lighting';
 import { legacyTemplateIds, mergeTemplates, migrateLegacyTemplates } from './templates';
 
 export type CameraState = 'starting' | 'ready' | 'error';
@@ -18,7 +19,6 @@ interface PracticeSession {
   cameraState: CameraState;
   cameraError: string | null;
   status: PracticeStatus;
-  best: ClassifyResult | null;
   hasTemplate: boolean;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -42,6 +42,8 @@ interface PracticeSession {
   feedbackOpen: boolean;
   /** Otra seña que se reconoció hace poco, para nombrarla en el aviso (D46). */
   identifiedSignId: string | null;
+  /** Aviso de luz sostenido (poca luz, contraluz, imagen quemada), o null (D48). */
+  lightHint: LightHint;
   /**
    * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
    * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
@@ -170,13 +172,13 @@ export function usePracticeSession(
   const [cameraState, setCameraState] = useState<CameraState>('starting');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [status, setStatus] = useState<PracticeStatus>('waiting');
-  const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
   const [attempt, setAttempt] = useState<PracticeSession['attempt']>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [identifiedSignId, setIdentifiedSignId] = useState<string | null>(null);
+  const [lightHint, setLightHint] = useState<LightHint>(null);
   const validatorRef = useRef<SessionValidator | null>(null);
   const gateRef = useRef<FeedbackGate | null>(null);
   /** Resultados recientes de la seña buscada, para la indicación de qué corregir. */
@@ -206,7 +208,6 @@ export function usePracticeSession(
     gateRef.current?.reset();
     recentTargets.current = [];
     setStatus('waiting');
-    setBest(null);
     setFinalScore(null);
     setAttempt(null);
     setFeedbackOpen(false);
@@ -216,21 +217,26 @@ export function usePracticeSession(
   const onFrame = useCallback(
     (validator: SessionValidator, gate: FeedbackGate) => (frame: HandsFrame | null) => {
       const t = frame?.timestampMs ?? performance.now();
-      const recorded = recording.current.filter((f) => t - f.t <= RECORDING_MS);
+      // Se agrega al final y se descarta lo viejo del principio: sin copiar
+      // la lista entera en cada cuadro (D49).
+      const recorded = recording.current;
       recorded.push(
         frame
           ? { t, hands: frame.hands, aspect: frame.aspect, ...(frame.face ? { face: frame.face } : {}) }
           : { t, hands: [] },
       );
-      recording.current = recorded;
+      let stale = 0;
+      while (stale < recorded.length && t - recorded[stale]!.t > RECORDING_MS) stale++;
+      if (stale > 0) recorded.splice(0, stale);
       // Solo se valida la mano que hace la seña, no la de apoyo (D38).
       const verdict = validator.feedHands(frame);
       if (canvasRef.current) drawOverlay(canvasRef.current, frame, verdict.hand?.landmarks ?? null);
       const gateState = gate.feed(t, verdict.hand !== null, verdict);
       setFeedbackOpen(gateState.open);
       setIdentifiedSignId(gateState.identifiedSignId);
+      // Solo estados que cambian poco: React no vuelve a dibujar la página
+      // en cada cuadro si el valor es el mismo (D49).
       setStatus(verdict.status);
-      setBest(verdict.best);
       if (verdict.status === 'correct' && verdict.best) {
         setFinalScore(verdict.best.score);
         setAttempt(null);
@@ -259,11 +265,11 @@ export function usePracticeSession(
       templates.some((t) => t.signId === signId) || legacyTemplateIds().has(signId),
     );
     setStatus('waiting');
-    setBest(null);
     setFinalScore(null);
     setAttempt(null);
     setFeedbackOpen(false);
     setIdentifiedSignId(null);
+    setLightHint(null);
     recentTargets.current = [];
     recording.current = [];
     setCameraState('starting');
@@ -315,7 +321,7 @@ export function usePracticeSession(
         const gate = new FeedbackGate(feedbackGraceMs(signType, validator.windowMs));
         gateRef.current = gate;
         setHasTemplate(validator.hasTemplates());
-        await detector.start(video, onFrame(validator, gate));
+        await detector.start(video, onFrame(validator, gate), (light) => setLightHint(light.hint));
         if (!cancelled) setCameraState('ready');
       } catch (err) {
         if (!cancelled) {
@@ -348,7 +354,6 @@ export function usePracticeSession(
     cameraState,
     cameraError,
     status,
-    best,
     hasTemplate,
     videoRef,
     canvasRef,
@@ -357,6 +362,7 @@ export function usePracticeSession(
     attempt,
     feedbackOpen,
     identifiedSignId,
+    lightHint,
     retry,
     downloadAttempt,
   };

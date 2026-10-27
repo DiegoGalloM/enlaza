@@ -135,6 +135,19 @@
   border-radius: var(--radius-pill);
 }
 
+/* Consejo de luz (D48): informativo, en azul; no es un error de quien practica. */
+.lightHint {
+  margin: 0 auto;
+  max-width: 560px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-blue-chip-text);
+  background: var(--color-blue-tint);
+  border-radius: 16px;
+  padding: 10px 16px;
+}
+
 /* Qué corregir cuando una seña dinámica aún no valida (D40), pasada la gracia (D46). */
 .hint {
   margin: 0;

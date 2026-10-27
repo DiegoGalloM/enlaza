@@ -6,6 +6,7 @@ import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
 import { fetchBundledTemplates, loadTemplates, mergeTemplates } from '../cv/templates';
 import { usePracticeSession } from '../cv/usePracticeSession';
+import { LIGHT_HINT_TEXT } from '../cv/lighting';
 import styles from './Practice.module.css';
 import { DYNAMIC_THRESHOLD, SCORE_LEVEL_LABEL, scoreLevel } from '@enlaza/cv-model';
 import type { DynamicDetail, SignTemplate } from '@enlaza/cv-model';
@@ -180,6 +181,12 @@ export function Practice() {
             <div className={styles.videoNotice}>{session.cameraError}</div>
           )}
         </div>
+
+        {session.lightHint && session.status !== 'correct' && (
+          <p className={styles.lightHint} role="status">
+            {LIGHT_HINT_TEXT[session.lightHint]}
+          </p>
+        )}
 
         <div className={styles.statusRow}>
           {session.status === 'correct' ? (
