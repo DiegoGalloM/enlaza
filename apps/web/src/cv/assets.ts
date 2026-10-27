@@ -37,14 +37,14 @@ export async function loadModel(url: string): Promise<Uint8Array | null> {
   try {
     if (typeof caches === 'undefined') return null;
     const cache = await caches.open(CACHE_NAME);
-    let response = await cache.match(url);
-    if (!response) {
-      const fresh = await fetch(url);
-      if (!fresh.ok) return null;
-      await cache.put(url, fresh.clone());
-      response = fresh;
-    }
-    return new Uint8Array(await response.arrayBuffer());
+    const cached = await cache.match(url);
+    if (cached) return new Uint8Array(await cached.arrayBuffer());
+    const fresh = await fetch(url);
+    if (!fresh.ok) return null;
+    // Guardar en la caché no retrasa el arranque: se escribe mientras el
+    // detector ya usa los bytes.
+    void cache.put(url, fresh.clone()).catch(() => {});
+    return new Uint8Array(await fresh.arrayBuffer());
   } catch {
     return null;
   }

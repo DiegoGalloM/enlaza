@@ -615,7 +615,15 @@ de esta seña.
 
 **Medido:**
 - Capturas del avatar congeladas en 7 casos (5 señas, ángulos −35° a 35°), modelo original contra optimizado: la diferencia media por píxel es 0.00–0.06, igual que entre dos corridas del modelo original (el pelo se sigue simulando). No se nota el mapa de normales a 1024 px en el panel.
-- Arranque de la práctica con MediaPipe real y la cámara falsa de Chrome (sin GPU, headless): en frío y directo a la práctica, 26.5 s; pasando antes 12 s por la lección (precarga), 17.4 s; segunda visita, 4.7 s.
+- Arranque de la práctica (hasta que la cámara y el detector están listos) con MediaPipe real y la cámara falsa de Chrome, headless, tres corridas contra `master`:
+
+  | Escenario | master | ahora |
+  |---|---|---|
+  | Primera visita, directo a la práctica | 10.2 s | 8.8–12.1 s (lo domina la red: es lo mismo) |
+  | Segunda visita | 4.0 s | 0.7–2.5 s |
+  | Primera visita, 12 s antes en la lección (precarga) | 5.5 s | 0.5–2.3 s |
+
+  Guardar el modelo en la caché no retrasa la primera visita: se escribe mientras el detector ya lo usa.
 
 **Descartado:**
 - **Servir el WASM desde la app:** jsDelivr lo entrega con brotli (11.5 MB → 3.1 MB) y caché inmutable de un año. Un hosting estático cualquiera no siempre comprime `.wasm`.
