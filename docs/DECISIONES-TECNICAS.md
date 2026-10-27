@@ -389,6 +389,44 @@ Las escenas de aprendiz (0.5×–1.25×, sostener, más abajo, centrada) siguen 
 
 **Por qué 35°:** con la palma abajo en el apoyo de Gracias, la rotación media es de ~45°. Las inclinaciones que sí validan quedan en 30° o menos.
 
+### D42. Buenas tardes: plantilla, y lo que contiene a Gracias
+
+(D41 está en la rama de Buenos días; esta numeración evita choques al unirlas.)
+
+**Qué:**
+- Plantilla de `lsc-cortesia-1` construida con la mano registrada (derecha) y
+  recortada al tramo de la animación (0.6–2.9 s): 36 frames, 2225 ms. Las
+  plantillas de Gracias, Por favor y Hola quedan como estaban en git (la
+  construcción no es reproducible y ya estaban aceptadas).
+- Buenas tardes se agregó a `diagnose-practice.mjs` y `stress-sign.mjs`.
+
+**Medido** (`stress-sign.mjs`, 16:9 y 4:3, umbral 0.60 sin cambios):
+- Valida en todo lo que pide la lista: 0.5×–1.25× (0.67–0.71), sostener el
+  final, contacto breve, más abajo, centrada, inclinada ±15°/±30°, palma
+  girada ±30°, dedos relajados, pulgar abierto, 12 cuadros por segundo y
+  temblor alto (0.60–0.83).
+- No valida: la mano quieta 3 s (≤ 0.05) ni la cámara espejada. Ninguna otra
+  seña con esta como objetivo (máximo 0.587, Gracias en video completo), y esta
+  con otra como objetivo tampoco (máximo 0.589, con Gracias).
+- Hola y Por favor no cambian y no confunden con Buenas tardes (≤ 0.38).
+
+**Excepción aceptada:** hacer Buenas tardes con **Gracias como objetivo** valida
+(0.69–0.70). La primera mitad de Buenas tardes es el movimiento completo de
+Gracias (boca → palma sobre palma), así que la ventana de Gracias lo encuentra
+dentro. Es el mismo caso que Buenos días con Gracias (D41). Separarlas
+requiere mirar lo que viene después, no la forma.
+
+**Límite medido (pendiente):** en `diagnose-practice` (la práctica cuadro a
+cuadro, empezando desde el reposo), 1.25× no valida (0.45 en 16:9 y 0.49 en
+4:3; Gracias sí, 0.64–0.66). La ventana de la práctica dura lo que la
+plantilla (2225 ms) y a 1.25× mete ~0.5 s de preparación (las manos que suben
+desde el regazo), y en una seña de 2.2 s eso pesa más que en una de 1.4 s.
+Terminar la plantilla antes (2.6 s) no ayuda (0.47 / 0.51); sostener el
+"tarde" 0.3 s lo deja en 0.58 / 0.61. `stress-sign`, que parte de la boca,
+valida 1.25×. Arreglarlo es cambiar el reconocedor para todas las señas
+(p. ej. evaluar también una ventana más corta que la plantilla), no los datos
+de esta seña.
+
 ---
 
 ## Un párrafo de síntesis

@@ -16,7 +16,7 @@ cada decisión está en `docs/AVATAR-DECISIONES.md` (A1–A34). Léelo antes de 
 | signId | Glosa | Video | Estado |
 |---|---|---|---|
 | lsc-cortesia-0 | Buenos días | buenos-dias.mp4 | pendiente |
-| lsc-cortesia-1 | Buenas tardes | buenas-tardes.mp4 | pendiente |
+| lsc-cortesia-1 | Buenas tardes | buenas-tardes.mp4 | hecha (A39, D42) |
 | lsc-cortesia-2 | Buenas noches | buenas-noches.mp4 | pendiente |
 | lsc-cortesia-3 | Gracias | gracias.mp4 | hecha (A35–A37) |
 | lsc-cortesia-4 | Por favor | por-favor.mp4 | hecha (A20–A34) |
@@ -73,6 +73,8 @@ Al terminar una seña, actualiza esta tabla.
    - `palmUp: { left: [a, b], right: [a, b] }` si la mano va con la palma hacia
      arriba y la detección no es confiable (dos manos encimadas: anchos de
      nudillos de 1–4 cm en vez de 6.5). La orientación sale del antebrazo (A36).
+   - `palmDown: { left: [a, b], right: [a, b] }`: lo mismo con la palma hacia
+     abajo (Buenas tardes: la derecha cruzada sobre el dorso de la izquierda; A39).
    - `holdUntil: { left: t }` para que la mano de apoyo empiece ya en su lugar,
      en vez de subir desde el regazo, que es preparación (A37).
    - `hand: 'right' | 'left'`: la mano que hace la seña, para la plantilla de
@@ -126,6 +128,8 @@ Captura en `<scratch>` (el scratchpad de la sesión), nunca en el repo:
 | Mano flotando frente a la cara (se ve de lado) | `faceContact`: la yema se apoya en la piel medida (A35) |
 | Codo alto y antebrazo horizontal con la mano en la cara | la mano gira sobre la yema, elegido junto con el brazo (A35) |
 | Mano que se va al costado con dos manos encimadas | `palmUp`: orientación registrada, sin usar la detección (A36) |
+| Dos manos encimadas con las palmas hacia abajo | `palmDown` (A39) |
+| Tirón al soltar la boca cuando le sigue un tramo registrado | termina el contacto con la mano quieta y separa las rampas (A39) |
 | Latigazo al girar la palma hacia arriba | giro del antebrazo en rango anatómico (A36) |
 | Manos cortadas en el borde de abajo | encuadre desde cadera + 0.1 torsos (A37) |
 | Plantilla que sale de la mano de apoyo | `hand` registrada en la seña (A37) |

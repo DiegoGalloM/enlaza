@@ -116,6 +116,7 @@ export function SignAvatar({
           handshape: animation.handshape,
           faceContact: animation.faceContact,
           palmUp: animation.palmUp,
+          palmDown: animation.palmDown,
           holdUntil: animation.holdUntil,
         });
         canvas.dataset.duration = player.duration.toFixed(3);
