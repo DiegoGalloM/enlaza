@@ -488,6 +488,54 @@ Penetración máxima del brazo derecho: 0.001 m.
   quedaban cortadas en el borde de abajo, que es justo lo que A10 quería evitar.
   El avatar se ve ~7% más chico; Hola y Por favor no cambian en nada más.
 
+## A38. Buenos días: configuración manual por tramo y contacto que termina con la mano quieta
+
+**Qué:**
+- `handshapeSpan: { right: [0.45, 1.2] }` junto con `handshape: { right: 'plana' }`:
+  la configuración registrada vale solo en ese tramo. Fuera de él los dedos
+  siguen la detección, y en el borde se mezclan con la rampa de `spanWeight`
+  (`retargetFingersInSpan`, retarget.ts). Sin tramo, todo queda como antes.
+- `faceContact: { right: [0.47, 0.95] }`: el contacto se registra hasta 0.95 s,
+  aunque la yema toca la boca hasta 1.09 s.
+- `holdUntil: { left: 1.45 }`, como en Gracias (A37).
+
+**Por qué:**
+- Buenos días es compuesta: la derecha va **plana** en la boca ("bueno") y
+  después **abierta con los dedos separados** ("día"). Sin configuración, la
+  detección la daba en gancho en la boca (A32). Con `plana` en toda la seña,
+  los dedos del "día" quedaban juntos.
+- **El contacto termina con la mano quieta.** Con el contacto hasta 1.09 s, la
+  rampa de salida coincidía con la bajada rápida de la mano. La inclinación
+  elegida sobre la yema pasaba de 65° a 10° y luego a 0° en dos cuadros,
+  porque sin contacto la mano vuelve a la orientación observada: tirón de
+  **615 rad/s²** en la muñeca y 367 en el antebrazo. Con el tramo hasta 0.95 s,
+  la inclinación se apaga en ~0.2 s (55° → 0°) antes de que la mano baje.
+- **La izquierda empieza donde recibe a la derecha.** En el video está palma
+  arriba al costado, frente a la cadera. En el avatar quedaba estirada hacia la
+  cámara, cortada en el borde de abajo, y a 1.4 s saltaba 23 cm al centro.
+
+**Descartado:**
+- Limitar la inclinación al peso del contacto (`CONTACT_MAX_TILT × peso`), en
+  el pipeline. Bajaba el tirón de Buenos días a 457, pero el brazo de Gracias
+  subía de 217 a **615**. Es un problema del tramo registrado, no del
+  retargeting.
+
+**Verificación:**
+- **Pruebas:** 30 de avatar, `tsc -b` y `oxlint` sin errores.
+- **Contacto con el cuerpo** (`check-contacts`): 0.003 m en los dos brazos.
+- **Suavidad** (`measure-smoothness`), aceleración máxima en rad/s²: brazo
+  derecho 188, antebrazo 345, mano 363. Lo más alto es a 1.10 s del ciclo,
+  cuando las manos pasan de palma arriba a palma abajo para juntarse: un giro
+  de casi 180° en 0.3 s que también hace la señante. Es continuo, con un pico
+  de ~10°/cuadro, sin volteos. Los dedos llegan a 230–314 cuando las manos se
+  abren al cruzarse frente a la cara. Izquierda: brazo 171, antebrazo 220,
+  mano 254.
+- **Hola y Gracias no cambian:** `measure-smoothness` da exactamente lo mismo
+  con el código anterior y con el nuevo.
+- **Visual:** frente, ±45°, ±70°, la mano en la boca de cerca y diez cuadros en
+  movimiento. Mano plana con las yemas en los labios, antebrazo por delante
+  del pelo (igual que Gracias), manos abiertas a los lados de la cabeza.
+
 ## Verificación de la séptima iteración
 - **Pruebas:** 30 de avatar (nuevas: `supinationAngle`, `spanWeight` y
   `tiltedContact`). `tsc -b` y `oxlint` sin errores.

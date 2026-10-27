@@ -31,6 +31,7 @@ const SLUGS = {
   'lsc-cortesia-3': 'gracias',
   'lsc-cortesia-4': 'por-favor',
   'lsc-cortesia-5': 'hola',
+  'lsc-cortesia-0': 'buenos-dias',
 };
 
 const bundle = JSON.parse(

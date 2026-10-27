@@ -41,6 +41,7 @@ const VIDEOS = {
   'lsc-cortesia-5': 'content/ical-2026-09/hola.mp4',
   'lsc-cortesia-3': 'content/ical-2026-09/gracias.mp4',
   'lsc-cortesia-1': 'content/ical-2026-09/buenas-tardes.mp4',
+  'lsc-cortesia-0': 'content/ical-2026-09/buenos-dias.mp4',
 };
 const video = VIDEOS[signId];
 if (!video) throw new Error(`Sin video registrado para ${signId}`);
