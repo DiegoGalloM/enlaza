@@ -1,3 +1,5 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { AppShell } from '../components/AppShell';
 import { Button } from '../components/Button';
@@ -6,18 +8,36 @@ import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { api } from '../api/client';
 import type { LessonSummary } from '../api/types';
+import { pathColumns, pathLayout } from './pathLayout';
 import styles from './LearningPath.module.css';
 
-/** Fixed map slots for the 7 MVP lessons, matching the design mockup. */
-const NODE_SLOTS = [
-  { left: '12%', top: '28%' },
-  { left: '36%', top: '20%' },
-  { left: '60%', top: '28%' },
-  { left: '84%', top: '20%' },
-  { left: '76%', top: '74%' },
-  { left: '50%', top: '82%' },
-  { left: '24%', top: '74%' },
-];
+/** Colores de los tramos del camino, como en el mockup. */
+const SEGMENT_DONE = '#3E7F66';
+const SEGMENT_LOCKED = '#2E333C';
+
+/**
+ * Ancho del mapa en píxeles, para elegir cuántas columnas caben. Sin
+ * ResizeObserver (jsdom) se queda en el ancho de escritorio.
+ */
+function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
+  const ref = useRef<T | null>(null);
+  const [width, setWidth] = useState(1000);
+  // Medir antes de pintar: sin esto, un celular ve un instante el mapa de 4 columnas.
+  useLayoutEffect(() => {
+    const measured = ref.current?.getBoundingClientRect().width;
+    if (measured) setWidth(measured);
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width];
+}
 
 function nodeState(lesson: LessonSummary): 'completed' | 'in-progress' | 'locked' {
   if (lesson.status === 'completed') return 'completed';
@@ -46,6 +66,10 @@ export function LearningPath() {
     lessons.find((l) => l.status === 'unlocked') ?? lessons.find((l) => l.status !== 'completed');
 
   const firstName = user?.displayName.split(/\s+/)[0] ?? '';
+
+  const [mapRef, mapWidth] = useWidth<HTMLDivElement>();
+  const columns = pathColumns(mapWidth);
+  const layout = pathLayout(lessons.length, columns);
 
   return (
     <AppShell>
@@ -86,44 +110,56 @@ export function LearningPath() {
         </div>
       </div>
 
-      <div className={styles.map}>
+      <div
+        ref={mapRef}
+        className={styles.map}
+        style={
+          {
+            '--path-columns': columns,
+            aspectRatio: lessons.length > 0 ? `${layout.width} / ${layout.height}` : undefined,
+          } as CSSProperties
+        }
+      >
         <svg
           width="100%"
           height="100%"
-          viewBox="0 0 900 520"
-          preserveAspectRatio="none"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
           className={styles.mapPath}
           aria-hidden="true"
         >
-          <path
-            d="M108,146 C170,146 200,104 324,104 C420,104 440,146 540,146"
-            fill="none"
-            stroke="#3E7F66"
-            strokeWidth="9"
-            strokeLinecap="round"
-          />
-          <path
-            d="M540,146 C620,146 660,104 756,104"
-            fill="none"
-            stroke="var(--color-blue)"
-            strokeWidth="9"
-            strokeLinecap="round"
-          />
-          <path
-            d="M756,104 C850,104 872,200 856,270 C838,350 780,385 684,385 C580,385 540,426 450,426 C370,426 320,385 216,385"
-            fill="none"
-            stroke="#2E333C"
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeDasharray="2 18"
-          />
+          {layout.segments.map((d, i) => {
+            // El tramo hacia una lección completa es verde; hacia la que está
+            // en curso, azul; hacia las bloqueadas, punteado.
+            const to = lessons[i + 1]!.status;
+            return (
+              <path
+                key={i}
+                d={d}
+                fill="none"
+                stroke={
+                  to === 'completed'
+                    ? SEGMENT_DONE
+                    : to === 'unlocked'
+                      ? 'var(--color-blue)'
+                      : SEGMENT_LOCKED
+                }
+                strokeWidth="9"
+                strokeLinecap="round"
+                strokeDasharray={to === 'locked' ? '2 18' : undefined}
+              />
+            );
+          })}
         </svg>
 
         {loading && <p className={styles.mapMessage}>Cargando tu ruta…</p>}
         {error && <p className={styles.mapMessage}>{error}</p>}
 
         {lessons.map((lesson, i) => {
-          const slot = NODE_SLOTS[i] ?? NODE_SLOTS[NODE_SLOTS.length - 1]!;
+          const node = layout.nodes[i]!;
+          const slot = {
+            left: `${(node.x / layout.width) * 100}%`,
+            top: `${(node.y / layout.height) * 100}%`,
+          };
           const state = nodeState(lesson);
           const content = (
             <LessonNode

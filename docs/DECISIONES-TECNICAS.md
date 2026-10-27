@@ -551,6 +551,24 @@ de esta seña.
 - **Contar tiempo de reloj en vez de tiempo con la mano en cuadro:** alguien que se aleja a mirar al avatar volvería con el aviso ya puesto.
 - **Nombrar la seña más parecida aunque no pase su umbral:** sería inventar un reconocimiento; solo se nombra lo que el validador de verdad reconoció.
 
+### D47. Celular, tablet y laptop: el mismo flujo en cualquier pantalla
+
+**Qué:**
+- **Ruta de aprendizaje generada** (`pathLayout.ts`): las lecciones se acomodan en serpentina con 2, 3 o 4 columnas según el ancho del mapa (`pathColumns`: menos de 560 px, 2; menos de 860 px, 3), y el camino se dibuja uniendo los nodos (verde hacia lecciones completas, azul hacia la que está en curso, punteado hacia las bloqueadas). El alto del mapa sale de la proporción del camino.
+- **Pantallas angostas (≤ 860 px):** la barra lateral pasa a ser una cabecera (marca y perfil), y la navegación baja a una barra de pestañas fija, al alcance del pulgar y respetando la zona segura de iPhone (`env(safe-area-inset-*)`, `viewport-fit=cover`). La racha queda en Progreso.
+- **Lección:** una sola columna desde 900 px (avatar arriba); en celular, avatar cuadrado de hasta 58 % del alto visible y botones a lo ancho.
+- **Práctica:** el recuadro de la cámara toma la **proporción real de la cámara** (`session.aspect`) y el lienzo del esqueleto también, así que se ve entera la imagen que ve el detector y el esqueleto calza con la mano. El recuadro no pasa del alto visible menos lo que ocupa el estado (`--frame-max-height`), para que en una laptop de 768 px de alto el estado se vea sin scroll. Si el celular gira, se ajusta (`video.onresize`).
+- En vertical se le pide a la cámara una imagen **3:4** (`aspectRatio` ideal): encuadra cabeza, pecho y manos. Las features no dependen de la proporción (D33).
+- Campos de texto de 16 px en celular (iOS amplía la página con menos), `lang="es"`, sin destello gris al tocar.
+
+**Por qué:** el piloto se hace en celulares. A 390 px de ancho la barra lateral se comía la pantalla, los nodos del mapa se montaban, la lección se salía de la tarjeta y el recuadro de la práctica era 16:9 con el esqueleto dibujado en un lienzo fijo de 960×540: con la cámara vertical de un celular, el esqueleto quedaba estirado y desplazado de la mano. Además, las 7 posiciones fijas del mapa ya no alcanzaban (hay 8 lecciones: la octava caía encima de la séptima).
+
+**Probado:** capturas de ruta, lección, práctica, progreso e inicio de sesión a 390×844, 768×1024, 1366×768 y 1920×1080, sin scroll horizontal en ninguna. `path-layout.test.ts` verifica que con 1–13 lecciones y 2–4 columnas no se enciman nodos y que la serpentina vuelve por la columna correcta.
+
+**Descartado:**
+- **Mapa vertical de una columna en celular:** con 2 columnas el camino conserva la forma del mockup y cabe el doble de lecciones por pantalla.
+- **Recortar la cámara al recuadro (`object-fit: cover` en un 16:9 fijo):** la persona no vería lo mismo que el detector y podría tener la mano fuera de cuadro sin saberlo.
+
 ---
 
 ## Un párrafo de síntesis

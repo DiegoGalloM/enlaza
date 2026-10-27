@@ -62,12 +62,25 @@
   gap: 16px;
 }
 
+.videoCard {
+  /* Alto máximo del recuadro de la cámara: que quepa con el estado debajo sin hacer scroll. */
+  --frame-max-height: calc(100vh - 270px);
+  --frame-max-height: calc(100svh - 270px);
+}
+
+/*
+ * El recuadro toma la proporción de la cámara (D47): se ve la imagen entera
+ * (lo mismo que ve el detector) y el esqueleto calza con la mano. Ancho y
+ * alto salen de la proporción, sin pasar del alto máximo.
+ */
 .videoFrame {
   position: relative;
   border-radius: 22px;
   overflow: hidden;
   background: var(--color-surface-2);
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--camera-aspect, 16 / 9);
+  width: min(100%, calc(var(--frame-max-height) * var(--camera-aspect, 1.7778)));
+  margin-inline: auto;
   border: 3px solid transparent;
   transition: border-color 0.2s ease;
 }
@@ -202,4 +215,43 @@
   font-size: 13px;
   color: var(--color-text-muted);
   padding: 80px 0;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px 12px calc(20px + env(safe-area-inset-bottom));
+    padding-top: calc(12px + env(safe-area-inset-top));
+    gap: 12px;
+  }
+
+  .topBar {
+    gap: 12px;
+  }
+
+  .gloss {
+    font-size: 24px;
+  }
+
+  .videoCard {
+    --frame-max-height: calc(100vh - 230px);
+    --frame-max-height: calc(100svh - 230px);
+    padding: 10px;
+    gap: 12px;
+    border-radius: 24px;
+  }
+
+  .videoFrame {
+    border-radius: 18px;
+  }
+
+  .statusPill {
+    font-size: 14px;
+    padding: 10px 16px;
+    text-align: center;
+    border-radius: 20px;
+  }
+
+  .hint {
+    font-size: 14px;
+  }
 }
