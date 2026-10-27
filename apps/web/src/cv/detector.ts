@@ -1,12 +1,16 @@
 import type { FaceBox, HandsFrame } from '@enlaza/cv-model';
 import type { FaceDetector, HandLandmarker } from '@mediapipe/tasks-vision';
 import { FACE_MODEL_URL, MODEL_URL, WASM_URL, loadModel } from './assets';
+import { LightProcessor, type LightState } from './lighting';
 
 /**
  * Recibe todas las manos que ve el detector en cada frame (hasta dos, D38), o
  * null si no ve ninguna. Quién la consume elige la mano de la seña con HandTracker.
  */
 export type FrameListener = (frame: HandsFrame | null) => void;
+
+/** Cambios en la luz de la cámara (D48): si se corrige y qué aviso dar. */
+export type LightListener = (state: LightState) => void;
 
 /**
  * Abstraction over the hand-landmark source so the practice screen can run
@@ -15,7 +19,7 @@ export type FrameListener = (frame: HandsFrame | null) => void;
  */
 export interface HandDetector {
   /** Begin emitting frames from the given video element. */
-  start(video: HTMLVideoElement, onFrame: FrameListener): Promise<void>;
+  start(video: HTMLVideoElement, onFrame: FrameListener, onLight?: LightListener): Promise<void>;
   stop(): void;
   /** True if this detector drives its own frames and needs no camera. */
   readonly needsCamera: boolean;
@@ -78,7 +82,7 @@ class MediaPipeDetector implements HandDetector {
   private running = false;
   private rafId = 0;
 
-  async start(video: HTMLVideoElement, onFrame: FrameListener): Promise<void> {
+  async start(video: HTMLVideoElement, onFrame: FrameListener, onLight?: LightListener): Promise<void> {
     const [{ FilesetResolver, HandLandmarker, FaceDetector }, handModel, faceModel] = await Promise.all([
       import('@mediapipe/tasks-vision'),
       loadModel(MODEL_URL),
@@ -117,9 +121,12 @@ class MediaPipeDetector implements HandDetector {
     this.running = true;
     let lastVideoTime = -1;
     let lastDetectionMs = -Infinity;
-    /** Promedio móvil de lo que tarda detectar un cuadro (manos + cara). */
+    /** Promedio móvil de lo que tarda detectar un cuadro (luz + manos + cara). */
     let detectionCostMs = 0;
     let warned = false;
+    // Con poca luz o contraluz, el detector ve una copia corregida del
+    // cuadro; con buena luz, el video tal cual (D48).
+    const light = new LightProcessor(onLight);
 
     const loop = () => {
       if (!this.running) {
@@ -140,7 +147,7 @@ class MediaPipeDetector implements HandDetector {
         lastVideoTime = video.currentTime;
         lastDetectionMs = now;
         try {
-          this.detect(video, now, landmarker, faceDetector, onFrame);
+          this.detect(video, light.frame(video, now), now, landmarker, faceDetector, onFrame);
         } catch (err) {
           // Un cuadro que falla no debe detener la práctica: se salta.
           if (!warned) console.warn('Falló la detección de un cuadro', err);
@@ -153,14 +160,16 @@ class MediaPipeDetector implements HandDetector {
     this.rafId = requestAnimationFrame(loop);
   }
 
+  /** `image`: el cuadro que ve el detector (el video, o su copia con la luz corregida, D48). */
   private detect(
     video: HTMLVideoElement,
+    image: HTMLVideoElement | HTMLCanvasElement,
     now: number,
     landmarker: HandLandmarker,
     faceDetector: FaceDetector | null,
     onFrame: FrameListener,
   ): void {
-    const result = landmarker.detectForVideo(video, now);
+    const result = landmarker.detectForVideo(image, now);
     const hands = result.landmarks.flatMap((landmarks, i) => {
       const category = result.handedness[i]?.[0];
       return category
@@ -175,9 +184,10 @@ class MediaPipeDetector implements HandDetector {
     if (hands.length > 0) {
       const face = faceDetector
         ? largestFace(
-            faceDetector.detectForVideo(video, now).detections,
-            video.videoWidth,
-            video.videoHeight,
+            faceDetector.detectForVideo(image, now).detections,
+            // La caja viene en píxeles de la imagen que se le pasó (la copia corregida es más chica).
+            image instanceof HTMLVideoElement ? image.videoWidth : image.width,
+            image instanceof HTMLVideoElement ? image.videoHeight : image.height,
           )
         : undefined;
       onFrame({
