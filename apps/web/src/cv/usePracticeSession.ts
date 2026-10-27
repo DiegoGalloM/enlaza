@@ -19,7 +19,6 @@ interface PracticeSession {
   cameraState: CameraState;
   cameraError: string | null;
   status: PracticeStatus;
-  best: ClassifyResult | null;
   hasTemplate: boolean;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -173,7 +172,6 @@ export function usePracticeSession(
   const [cameraState, setCameraState] = useState<CameraState>('starting');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [status, setStatus] = useState<PracticeStatus>('waiting');
-  const [best, setBest] = useState<ClassifyResult | null>(null);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
@@ -210,7 +208,6 @@ export function usePracticeSession(
     gateRef.current?.reset();
     recentTargets.current = [];
     setStatus('waiting');
-    setBest(null);
     setFinalScore(null);
     setAttempt(null);
     setFeedbackOpen(false);
@@ -220,21 +217,26 @@ export function usePracticeSession(
   const onFrame = useCallback(
     (validator: SessionValidator, gate: FeedbackGate) => (frame: HandsFrame | null) => {
       const t = frame?.timestampMs ?? performance.now();
-      const recorded = recording.current.filter((f) => t - f.t <= RECORDING_MS);
+      // Se agrega al final y se descarta lo viejo del principio: sin copiar
+      // la lista entera en cada cuadro (D49).
+      const recorded = recording.current;
       recorded.push(
         frame
           ? { t, hands: frame.hands, aspect: frame.aspect, ...(frame.face ? { face: frame.face } : {}) }
           : { t, hands: [] },
       );
-      recording.current = recorded;
+      let stale = 0;
+      while (stale < recorded.length && t - recorded[stale]!.t > RECORDING_MS) stale++;
+      if (stale > 0) recorded.splice(0, stale);
       // Solo se valida la mano que hace la seña, no la de apoyo (D38).
       const verdict = validator.feedHands(frame);
       if (canvasRef.current) drawOverlay(canvasRef.current, frame, verdict.hand?.landmarks ?? null);
       const gateState = gate.feed(t, verdict.hand !== null, verdict);
       setFeedbackOpen(gateState.open);
       setIdentifiedSignId(gateState.identifiedSignId);
+      // Solo estados que cambian poco: React no vuelve a dibujar la página
+      // en cada cuadro si el valor es el mismo (D49).
       setStatus(verdict.status);
-      setBest(verdict.best);
       if (verdict.status === 'correct' && verdict.best) {
         setFinalScore(verdict.best.score);
         setAttempt(null);
@@ -263,7 +265,6 @@ export function usePracticeSession(
       templates.some((t) => t.signId === signId) || legacyTemplateIds().has(signId),
     );
     setStatus('waiting');
-    setBest(null);
     setFinalScore(null);
     setAttempt(null);
     setFeedbackOpen(false);
@@ -353,7 +354,6 @@ export function usePracticeSession(
     cameraState,
     cameraError,
     status,
-    best,
     hasTemplate,
     videoRef,
     canvasRef,

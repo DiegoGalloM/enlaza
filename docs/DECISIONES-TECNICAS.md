@@ -601,6 +601,35 @@ de esta seña.
 
 **Límites:** la luz es simulada sobre videos con buena luz de origen. En una cámara real con poca luz hay además desenfoque por movimiento, que no se simula. Confirmarlo con intentos reales (`?detalle=1`).
 
+### D49. Rendimiento: menos descarga, arranque más rápido y sin trabar equipos lentos
+
+**Qué:**
+- **Avatar de 10.8 MB a 6.3 MB** (`tools/avatar/optimize-vrm.py`, requiere Pillow). Solo toca imágenes dentro del GLB: la miniatura del VRM (2048×2048, 1.2 MB, no se dibuja nunca) pasa a 64×64, el mapa de normales de la piel baja de 2048 a 1024 px, y todas las PNG se recomprimen sin pérdida. Geometría, huesos, morphs y extensiones VRM quedan igual.
+- **Modelos del detector en Cache Storage** (`cv/assets.ts`). Google los deja en caché solo una hora: después, cada práctica espera una revalidación (304) antes de arrancar, y los navegadores de celular suelen sacar de su caché HTTP los archivos grandes (el de manos pesa 7.8 MB). Ahora se guardan la primera vez y se leen sin red.
+- **Precarga en la lección:** mientras la persona mira al avatar, se bajan en un momento ocioso el WASM y los modelos (`warmUpDetector`). No se precarga con ahorro de datos ni en 2G.
+- **GPU con respaldo en CPU:** si el navegador no da GPU para MediaPipe (WebGL2 apagado, equipo viejo), el detector se crea en CPU en vez de fallar. Un cuadro cuya detección falla se salta y no detiene la práctica.
+- **Ritmo adaptable:** si detectar un cuadro tarda en promedio más de 35 ms, se procesan menos cuadros (nunca menos de 12 por segundo, el ritmo al que las señas ya validan, D42). La página no se traba en un celular lento.
+- **Menos trabajo por cuadro en React:** la práctica ya no guarda en el estado el mejor resultado de cada cuadro (nadie lo leía, y en señas estáticas redibujaba la página 30 veces por segundo). Los últimos 10 s de landmarks (D45) se guardan sin copiar la lista en cada cuadro.
+- El avatar no se dibuja mientras está fuera de pantalla (`IntersectionObserver`; en el celular, al bajar al botón de practicar).
+- Calibración y tokens de diseño se cargan aparte: no son parte del flujo de quien aprende.
+
+**Medido:**
+- Capturas del avatar congeladas en 7 casos (5 señas, ángulos −35° a 35°), modelo original contra optimizado: la diferencia media por píxel es 0.00–0.06, igual que entre dos corridas del modelo original (el pelo se sigue simulando). No se nota el mapa de normales a 1024 px en el panel.
+- Arranque de la práctica (hasta que la cámara y el detector están listos) con MediaPipe real y la cámara falsa de Chrome, headless, tres corridas contra `master`:
+
+  | Escenario | master | ahora |
+  |---|---|---|
+  | Primera visita, directo a la práctica | 10.2 s | 8.8–12.1 s (lo domina la red: es lo mismo) |
+  | Segunda visita | 4.0 s | 0.7–2.5 s |
+  | Primera visita, 12 s antes en la lección (precarga) | 5.5 s | 0.5–2.3 s |
+
+  Guardar el modelo en la caché no retrasa la primera visita: se escribe mientras el detector ya lo usa.
+
+**Descartado:**
+- **Servir el WASM desde la app:** jsDelivr lo entrega con brotli (11.5 MB → 3.1 MB) y caché inmutable de un año. Un hosting estático cualquiera no siempre comprime `.wasm`.
+- **Bajar la resolución interna del avatar en celulares:** es la decisión A9 (supersampling, mínimo 2×), tomada para que se vean los dedos.
+- **Mover MediaPipe a un Web Worker:** liberaría el hilo principal del todo, pero cambia cómo llegan los cuadros al detector en cada navegador (Safari incluido). Con el ritmo adaptable la página ya no se traba; queda para cuando haga falta.
+
 ---
 
 ## Un párrafo de síntesis
