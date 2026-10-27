@@ -186,6 +186,11 @@ export class SessionValidator {
     return own?.threshold ?? DYNAMIC_THRESHOLD;
   }
 
+  /** Duración de la seña buscada (la ventana de 1×), en ms: la usa la gracia de los avisos (D46). */
+  get windowMs(): number {
+    return this.opts.windowMs;
+  }
+
   /** True once the target sign has been validated; further frames are ignored. */
   get isDone(): boolean {
     return this.done;

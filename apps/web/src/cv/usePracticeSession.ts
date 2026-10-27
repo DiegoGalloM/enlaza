@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SessionValidator, dynamicFeedback } from '@enlaza/cv-model';
+import { FeedbackGate, SessionValidator, dynamicFeedback, feedbackGraceMs } from '@enlaza/cv-model';
 import type {
   ClassifyResult,
   DynamicFeedback,
@@ -29,6 +29,13 @@ interface PracticeSession {
    * buscada, con su desglose, y qué corregir (D40). null si no hay intento.
    */
   attempt: { result: ClassifyResult; feedback: DynamicFeedback } | null;
+  /**
+   * Ya pasó el tiempo de gracia de intento (D46): recién ahora la práctica
+   * dice que la seña aún no sale. Antes, solo acompaña.
+   */
+  feedbackOpen: boolean;
+  /** Otra seña que se reconoció hace poco, para nombrarla en el aviso (D46). */
+  identifiedSignId: string | null;
   /**
    * Vuelve a empezar la seña con la cámara ya abierta: limpia la validación
    * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
@@ -132,7 +139,10 @@ export function usePracticeSession(
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
   const [attempt, setAttempt] = useState<PracticeSession['attempt']>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [identifiedSignId, setIdentifiedSignId] = useState<string | null>(null);
   const validatorRef = useRef<SessionValidator | null>(null);
+  const gateRef = useRef<FeedbackGate | null>(null);
   /** Resultados recientes de la seña buscada, para la indicación de qué corregir. */
   const recentTargets = useRef<{ t: number; result: ClassifyResult }[]>([]);
   /** Últimos RECORDING_MS de frames del detector, para downloadAttempt. */
@@ -157,15 +167,18 @@ export function usePracticeSession(
 
   const retry = useCallback(() => {
     validatorRef.current?.reset();
+    gateRef.current?.reset();
     recentTargets.current = [];
     setStatus('waiting');
     setBest(null);
     setFinalScore(null);
     setAttempt(null);
+    setFeedbackOpen(false);
+    setIdentifiedSignId(null);
   }, []);
 
   const onFrame = useCallback(
-    (validator: SessionValidator) => (frame: HandsFrame | null) => {
+    (validator: SessionValidator, gate: FeedbackGate) => (frame: HandsFrame | null) => {
       const t = frame?.timestampMs ?? performance.now();
       const recorded = recording.current.filter((f) => t - f.t <= RECORDING_MS);
       recorded.push(
@@ -177,6 +190,9 @@ export function usePracticeSession(
       // Solo se valida la mano que hace la seña, no la de apoyo (D38).
       const verdict = validator.feedHands(frame);
       if (canvasRef.current) drawOverlay(canvasRef.current, frame, verdict.hand?.landmarks ?? null);
+      const gateState = gate.feed(t, verdict.hand !== null, verdict);
+      setFeedbackOpen(gateState.open);
+      setIdentifiedSignId(gateState.identifiedSignId);
       setStatus(verdict.status);
       setBest(verdict.best);
       if (verdict.status === 'correct' && verdict.best) {
@@ -210,6 +226,8 @@ export function usePracticeSession(
     setBest(null);
     setFinalScore(null);
     setAttempt(null);
+    setFeedbackOpen(false);
+    setIdentifiedSignId(null);
     recentTargets.current = [];
     recording.current = [];
     setCameraState('starting');
@@ -246,8 +264,10 @@ export function usePracticeSession(
           migrated.length > 0 ? mergeTemplates(templates, migrated) : templates,
         );
         validatorRef.current = validator;
+        const gate = new FeedbackGate(feedbackGraceMs(signType, validator.windowMs));
+        gateRef.current = gate;
         setHasTemplate(validator.hasTemplates());
-        await detector.start(video, onFrame(validator));
+        await detector.start(video, onFrame(validator, gate));
         if (!cancelled) setCameraState('ready');
       } catch (err) {
         if (!cancelled) {
@@ -266,6 +286,7 @@ export function usePracticeSession(
     return () => {
       cancelled = true;
       validatorRef.current = null;
+      gateRef.current = null;
       detector.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
@@ -284,6 +305,8 @@ export function usePracticeSession(
     canvasRef,
     finalScore,
     attempt,
+    feedbackOpen,
+    identifiedSignId,
     retry,
     downloadAttempt,
   };

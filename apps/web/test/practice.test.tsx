@@ -185,7 +185,7 @@ describe('Practice', () => {
     expect(detector.starts()).toBe(1);
   });
 
-  it('suggests a retry when the user holds the wrong sign', async () => {
+  it('con la seña equivocada no avisa nada durante la gracia de intento (D46)', async () => {
     signInStorage();
     installTemplates();
     const detector = installFakeDetector();
@@ -197,14 +197,41 @@ describe('Practice', () => {
       expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
     );
 
-    // Hold the WRONG sign (s2 = "B") past retryFrames (default 20).
+    // La seña equivocada (s2 = "B") sostenida más que retryFrames (20), pero
+    // menos que la gracia: el validador ya la reconoce, la práctica todavía calla.
     await act(async () => {
-      for (let i = 0; i < 21; i++) {
+      for (let i = 0; i < 60; i++) {
         detector.emit({ landmarks: poseB, handedness: 'Right', timestampMs: i * 33, aspect: ASPECT });
       }
     });
 
-    expect(await screen.findByText(/parece "B"/)).toBeInTheDocument();
+    expect(screen.getByText(/Te vemos — haz la seña A/)).toBeInTheDocument();
+    expect(screen.queryByText(/Se parece a/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ver la seña otra vez' })).not.toBeInTheDocument();
+  });
+
+  it('pasada la gracia, nombra en amarillo la seña que reconoció (D46)', async () => {
+    signInStorage();
+    installTemplates();
+    const detector = installFakeDetector();
+    apiMock.lesson.mockResolvedValue(lessonDetailFixture);
+
+    renderPractice();
+    await screen.findByText(/Muestra tu mano/);
+    await waitFor(() =>
+      expect(screen.queryByText(/Iniciando cámara/)).not.toBeInTheDocument(),
+    );
+
+    // Más de 5 s de intento con la seña equivocada.
+    await act(async () => {
+      for (let i = 0; i < 160; i++) {
+        detector.emit({ landmarks: poseB, handedness: 'Right', timestampMs: i * 33, aspect: ASPECT });
+      }
+    });
+
+    const nudge = await screen.findByText(/Se parece a "B" — intenta otra vez A/);
+    expect(nudge.className).toMatch(/statusNudge/);
+    expect(screen.getByRole('button', { name: 'Ver la seña otra vez' })).toBeInTheDocument();
     expect(apiMock.recordAttempt).not.toHaveBeenCalled();
   });
 

@@ -523,6 +523,34 @@ de esta seña.
 
 **Límites:** se probó con la misma señante espejada, no con una persona zurda real. Seguir dos manos duplica el trabajo de DTW en esas señas (dos ventanas de tres largos cada 400 ms); en la práctica no se notó.
 
+### D46. La práctica espera antes de decir que la seña no sale, y lo dice en amarillo
+
+**Qué:**
+- `FeedbackGate` (cv-model) lleva el **tiempo de intento**: los milisegundos con la mano de la seña en cuadro desde que empieza la práctica, desde "Reintentar" o desde una pausa. Mientras no pasa la **gracia**, la práctica solo acompaña ("Te vemos — haz la seña…"): no marca "otra seña" ni muestra la indicación de qué falta (D40), aunque el validador ya las tenga.
+- La gracia de cada seña es lo que dura hacerla despacio desde el reposo: la ventana más larga del validador (1.6× la seña, D43) más 1.5 s de preparación, con un mínimo de 5 s (`feedbackGraceMs`). Hola, Gracias, Por favor: 5 s; Buenas tardes: 5.1 s; Buenos días: 5.6 s.
+- Pasada la gracia, el aviso es **amarillo** (tokens `--color-yellow*`), nunca rojo, y dice qué seña reconoció si reconoció otra sobre su umbral en los últimos 4 s: "Se parece a «Gracias» — intenta otra vez Hola". Si no reconoció ninguna: "Aún no reconocemos Hola — sigue intentando, sin prisa". Debajo va la indicación de D40 y un botón "Ver la seña otra vez" que vuelve a la lección.
+- Una pausa de 3 s sin mano (p. ej., ir a mirar al avatar) devuelve la gracia completa. Los huecos entre frames de más de 250 ms (pestaña en segundo plano) no cuentan como intento.
+
+**Por qué:** quien aprende casi nunca acierta al primer intento, y el aviso salía desde el primer segundo, a mitad de un intento que iba bien, en rosa (el color de error de la app). Se leía como "lo hiciste mal" y frustra (D43). Hacer la seña despacio ya valida; el aviso solo tiene sentido después de ese intento lento.
+
+**Medido** (cachés del detector de la app, `SessionValidator` + `FeedbackGate`, 16:9 y 4:3):
+
+| Seña bien hecha | 1× | 0.8× | 0.6× | 0.5× | Gracia |
+|---|---|---|---|---|---|
+| Hola | 0.5–0.8 s | 0.6–0.9 s | 0.9–1.1 s | 1.0–1.2 s | 5.0 s |
+| Gracias | 1.7 s | 1.8 s | 2.5 s | 3.1 s | 5.0 s |
+| Por favor | 0.8 s | 0.9 s | 1.1 s | 1.2 s | 5.0 s |
+| Buenos días | 2.0–2.4 s | 2.6 s | 3.3 s | 3.8 s | 5.6 s |
+| Buenas tardes | 2.0 s | 2.6 s | 3.4 s | 3.8 s | 5.1 s |
+
+- Todas validan antes de que se pueda abrir el aviso, también a media velocidad.
+- Seña equivocada, tres repeticiones seguidas: el aviso sale entre 5.6 y 7.2 s y nombra la seña que se hizo en 18 de 20 pares (los otros 2 no la nombran: dicen "aún no reconocemos"). Las excepciones ya aceptadas en D41/D42 (Buenos días y Buenas tardes con Gracias como objetivo) siguen validando.
+
+**Descartado:**
+- **Gracia fija para todas las señas:** las compuestas (Buenos días) tardan más en hacerse despacio; una gracia corta las cortaría a media seña.
+- **Contar tiempo de reloj en vez de tiempo con la mano en cuadro:** alguien que se aleja a mirar al avatar volvería con el aviso ya puesto.
+- **Nombrar la seña más parecida aunque no pase su umbral:** sería inventar un reconocimiento; solo se nombra lo que el validador de verdad reconoció.
+
 ---
 
 ## Un párrafo de síntesis
