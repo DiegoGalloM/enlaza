@@ -6,14 +6,14 @@ import { api } from '../api/client';
 import { fetchBundledTemplates, loadTemplates, mergeTemplates } from '../cv/templates';
 import { usePracticeSession } from '../cv/usePracticeSession';
 import styles from './Practice.module.css';
-import { SCORE_LEVEL_LABEL, scoreLevel } from '@enlaza/cv-model';
+import { DYNAMIC_THRESHOLD, SCORE_LEVEL_LABEL, scoreLevel } from '@enlaza/cv-model';
 import type { DynamicDetail, SignTemplate } from '@enlaza/cv-model';
 
 const NO_TEMPLATES: SignTemplate[] = [];
 
 /** Desglose del puntaje de un intento: forma × lugar × movimiento (D40). */
-function formatDetail(score: number, d: DynamicDetail): string {
-  const parts = [`puntaje ${score.toFixed(2)} (umbral 0.60)`, `forma ${d.shape.toFixed(2)}`];
+function formatDetail(score: number, d: DynamicDetail, threshold: number): string {
+  const parts = [`puntaje ${score.toFixed(2)} (umbral ${threshold.toFixed(2)})`, `forma ${d.shape.toFixed(2)}`];
   if (d.orientationDeg !== undefined) parts.push(`rotación ${d.orientationDeg.toFixed(0)}°`);
   if (d.locationError !== undefined) {
     parts.push(`lugar ${d.locationFactor.toFixed(2)} (error ${d.locationError.toFixed(2)} caras)`);
@@ -21,7 +21,26 @@ function formatDetail(score: number, d: DynamicDetail): string {
   if (d.motionRatio !== undefined) {
     parts.push(`movimiento ${d.motionFactor.toFixed(2)} (${(d.motionRatio * 100).toFixed(0)}%)`);
   }
+  if (d.windowMs !== undefined) parts.push(`ventana ${(d.windowMs / 1000).toFixed(1)} s`);
   return parts.join(' · ');
+}
+
+/** Umbral de una seña dinámica: el propio de su plantilla, o el general (D43). */
+function thresholdFor(signId: string, templates: SignTemplate[]): number {
+  for (const t of templates) {
+    if (t.signId === signId && t.type === 'dynamic' && t.threshold !== undefined) return t.threshold;
+  }
+  return DYNAMIC_THRESHOLD;
+}
+
+/**
+ * De dónde sale la plantilla de la seña: una grabada en /plantillas pisa a la
+ * de la app sin avisar, y si quedó mal la seña no valida nunca (D45).
+ */
+function templateOrigin(signId: string): string {
+  return loadTemplates().some((t) => t.signId === signId)
+    ? 'Plantilla grabada en este dispositivo: pisa a la de la app (bórrala en calibración si no valida).'
+    : 'Plantilla de la app.';
 }
 
 /**
@@ -183,8 +202,20 @@ export function Practice() {
         )}
         {showDetail && session.attempt?.result.detail && (
           <p className={styles.detail}>
-            {formatDetail(session.attempt.result.score, session.attempt.result.detail)}
+            {formatDetail(
+              session.attempt.result.score,
+              session.attempt.result.detail,
+              thresholdFor(currentSign.id, templates ?? NO_TEMPLATES),
+            )}
           </p>
+        )}
+        {showDetail && (
+          <div className={styles.diagnostics}>
+            <p className={styles.detail}>{templateOrigin(currentSign.id)}</p>
+            <Button variant="outline" onClick={session.downloadAttempt}>
+              Descargar intento (landmarks, últimos 10 s)
+            </Button>
+          </div>
         )}
 
         {session.status === 'correct' && (

@@ -34,6 +34,23 @@ interface PracticeSession {
    * (incluida la ventana de frames de las dinámicas) para intentarla de nuevo.
    */
   retry: () => void;
+  /**
+   * Descarga los últimos segundos de landmarks (sin imagen) como JSON, para
+   * reproducir el intento con tools/content/replay-attempt.mjs (D45). Solo se
+   * ofrece con ?detalle=1, y el archivo queda en el equipo de quien lo baja.
+   */
+  downloadAttempt: () => void;
+}
+
+/** Milisegundos de landmarks que se guardan para descargar un intento. */
+const RECORDING_MS = 10000;
+
+/** Frame tal como lo entrega el detector, para reproducirlo fuera de la app. */
+interface RecordedFrame {
+  t: number;
+  hands: HandsFrame['hands'];
+  aspect?: number;
+  face?: HandsFrame['face'];
 }
 
 /** MediaPipe hand skeleton (pairs of landmark indices). */
@@ -118,6 +135,25 @@ export function usePracticeSession(
   const validatorRef = useRef<SessionValidator | null>(null);
   /** Resultados recientes de la seña buscada, para la indicación de qué corregir. */
   const recentTargets = useRef<{ t: number; result: ClassifyResult }[]>([]);
+  /** Últimos RECORDING_MS de frames del detector, para downloadAttempt. */
+  const recording = useRef<RecordedFrame[]>([]);
+  const signIdRef = useRef<string | null>(null);
+  signIdRef.current = sign?.id ?? null;
+
+  const downloadAttempt = useCallback(() => {
+    const payload = {
+      kind: 'enlaza-intento',
+      signId: signIdRef.current,
+      recordedAt: new Date().toISOString(),
+      frames: recording.current,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `intento-${signIdRef.current ?? 'sena'}-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, []);
 
   const retry = useCallback(() => {
     validatorRef.current?.reset();
@@ -130,6 +166,14 @@ export function usePracticeSession(
 
   const onFrame = useCallback(
     (validator: SessionValidator) => (frame: HandsFrame | null) => {
+      const t = frame?.timestampMs ?? performance.now();
+      const recorded = recording.current.filter((f) => t - f.t <= RECORDING_MS);
+      recorded.push(
+        frame
+          ? { t, hands: frame.hands, aspect: frame.aspect, ...(frame.face ? { face: frame.face } : {}) }
+          : { t, hands: [] },
+      );
+      recording.current = recorded;
       // Solo se valida la mano que hace la seña, no la de apoyo (D38).
       const verdict = validator.feedHands(frame);
       if (canvasRef.current) drawOverlay(canvasRef.current, frame, verdict.hand?.landmarks ?? null);
@@ -167,6 +211,7 @@ export function usePracticeSession(
     setFinalScore(null);
     setAttempt(null);
     recentTargets.current = [];
+    recording.current = [];
     setCameraState('starting');
     setCameraError(null);
 
@@ -240,5 +285,6 @@ export function usePracticeSession(
     finalScore,
     attempt,
     retry,
+    downloadAttempt,
   };
 }

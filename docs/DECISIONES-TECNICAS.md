@@ -389,6 +389,27 @@ Las escenas de aprendiz (0.5×–1.25×, sostener, más abajo, centrada) siguen 
 
 **Por qué 35°:** con la palma abajo en el apoyo de Gracias, la rotación media es de ~45°. Las inclinaciones que sí validan quedan en 30° o menos.
 
+### D45. Descargar un intento real y reproducirlo fuera de la app
+
+(Va junto a D40 porque la completa; D43 y D44 están más abajo.)
+
+**Qué:**
+- Con `?detalle=1`, la práctica ofrece **"Descargar intento"**: un JSON con los últimos 10 s de lo que entregó el detector (manos con sus landmarks y etiqueta, caja de la cara, proporción de la cámara y tiempo de cada frame). No lleva imagen: solo puntos. El archivo se genera en el navegador y queda en el equipo de quien lo baja; no pasa por el API.
+- `tools/content/replay-attempt.mjs <intento.json>` lo reproduce con el mismo `SessionValidator` de la app y dice:
+  1. la calidad de la captura (cuadros por segundo, frames con mano, con dos manos y con cara, etiquetas);
+  2. la línea de tiempo de la seña buscada: puntaje = forma × lugar × movimiento, ventana, qué seña quedó primera y qué mano se leyó;
+  3. variantes, una por causa posible (umbral, ventanas más largas, sin compuerta de lugar o de movimiento, forma con rotación, seguir la otra mano). Si una valida y la actual no, esa es la causa.
+- Con `--plantillas=<json>` usa también las plantillas grabadas en el dispositivo (exportadas desde `/plantillas`), igual que la app.
+- `?detalle=1` también dice si la plantilla de la seña es la de la app o una grabada en el dispositivo (una grabada pisa a la de la app sin avisar), y el desglose muestra el umbral real de la seña (Buenos días: 0.50, D43) y la ventana que dio el puntaje.
+
+**Por qué:** las pruebas de estrés (`stress-sign`) simulan variaciones sobre una sola señante. Cuando una persona real dice "no me reconoce", la línea de `?detalle=1` da un solo número del mejor momento, pero no deja ver qué pasó en el resto del intento ni probar arreglos. Con el intento descargado se mide sobre lo que de verdad vio la cámara.
+
+**Probado:** con una caché de video convertida al formato del intento, Buenos días valida a los 2.4 s, igual que en `diagnose-practice`. Gracias hecha en espejo no valida (mejor 0.24, se lee la mano derecha), y la variante "siguiendo la otra mano" valida con 0.82: la herramienta señala la causa que D44 resuelve.
+
+**Descartado:**
+- **Grabar video:** pesa mucho y es dato sensible. Los landmarks bastan para reproducir el reconocimiento.
+- **Subir el intento al API:** el video y sus derivados se quedan en el cliente (síntesis de este documento). Si la persona quiere compartirlo, lo manda ella.
+
 ### D42. Buenas tardes: plantilla, y lo que contiene a Gracias
 
 (D41 está en la rama de Buenos días; esta numeración evita choques al unirlas.)

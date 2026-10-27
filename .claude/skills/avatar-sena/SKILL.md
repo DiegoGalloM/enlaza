@@ -111,7 +111,9 @@ Al terminar una seña, actualiza esta tabla.
 6. **Probar en la app:** `/leccion/lsc-cortesia/practica?sign=<signId>&detalle=1`.
    La práctica dice qué falta (D40), y `detalle=1` muestra el desglose:
    forma, rotación, lugar y movimiento. Si alguien reporta que no le valida,
-   pide esa línea antes de tocar nada.
+   pide esa línea antes de tocar nada, y mejor aún el archivo de
+   **"Descargar intento"**: `npx vite-node tools/content/replay-attempt.mjs <intento.json>`
+   lo reproduce y prueba una variante por causa posible (D45).
 7. **Documentar** en `docs/AVATAR-DECISIONES.md` (A40 en adelante) o en
    `docs/DECISIONES-TECNICAS.md` (D44 en adelante) solo lo que la seña haya
    enseñado de nuevo, y actualizar la tabla de arriba.
