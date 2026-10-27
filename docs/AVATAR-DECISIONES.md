@@ -563,3 +563,54 @@ No es un error del retargeting: **medido en el video**, la inclinación de la
 cabeza (nariz respecto a las orejas) pasa de ~15° a ~24° mientras las manos
 bajan. Es el asentimiento que acompaña a la seña, y queda en el mismo rango que
 Hola (22°) y Por favor (25°), que ya se revisaron.
+
+## A39. Palma abajo registrada: Buenas tardes
+
+(A38 está en la rama de Buenos días; esta numeración evita choques al unirlas.)
+
+**Qué:**
+- `animations.ts` acepta `palmDown: { left: [a, b], right: [a, b] }`, gemelo de
+  `palmUp` (A36): en ese tramo no se usa la detección de la mano, la palma va
+  hacia abajo y los dedos siguen al antebrazo, en horizontal.
+  `palmUpRotation` pasa a ser `palmRotation(rig, side, antebrazo, 'arriba' | 'abajo')`.
+  Los huecos de detección dentro de cualquiera de los dos tramos se tratan
+  igual (el antebrazo no se descarta).
+- Buenas tardes (`lsc-cortesia-1`) se registra con lo que ya había: tramo
+  [0.6, 2.9], sonrisa de Hola, manos planas, `faceContact` [0.6, 1.02],
+  `palmUp` izquierda [0.6, 1.66] y derecha [1.5, 1.62], `palmDown` de las dos
+  [2.3, 2.9], `holdUntil` izquierda 1.4 y `hand: 'right'`.
+
+**Por qué (medido en los landmarks, ancho entre nudillos; el real es 6.5 cm):**
+- En "tarde" la derecha se apoya cruzada sobre el dorso de la izquierda, las
+  dos palma abajo: la derecha da 1.5–2 cm y la izquierda desaparece a ratos
+  (2.22–2.37 s y 2.93 s). Es el mismo problema de A36 con la palma al revés.
+  El antebrazo de cada mano cruza el cuerpo igual que los dedos en el video,
+  así que "los dedos siguen al antebrazo" sirve tal cual.
+- La izquierda, palma arriba frente a la cámara, da 1–2 cm todo el tramo de
+  "bueno" (de canto): va registrada desde el inicio.
+- **La mano de apoyo empieza en su lugar (A37):** mientras la derecha está en
+  la boca, la izquierda descansa casi en el regazo y en el avatar quedaba 12 cm
+  bajo el codo, cortada en el borde. Con `holdUntil` 1.4 empieza palma arriba
+  al frente, a la misma altura que en Gracias (muñeca a 1.08 m).
+- **Tirón al soltar la boca:** con el contacto hasta 1.15 s y la palma arriba
+  derecha desde 1.4 s, la muñeca derecha daba 466 rad/s² al bajar. Las dos
+  rampas (0.25 s) se sumaban al movimiento. Con el contacto hasta 1.02 s (la
+  mano se mueve a 1.17 s) y la palma arriba desde 1.5 s: 295, y ese máximo ya
+  no está al soltar sino en el giro de la palma hacia abajo (video 2.03 s),
+  que en la detección gira ~50° en 0.08 s: es la velocidad real.
+- **Tramo hasta 2.9 s y no 2.6 s:** terminar antes acortaba el "tarde"
+  sostenido que ve quien aprende y no mejoraba el reconocimiento a 1.25× (D42).
+
+**Medido:**
+- `check-contacts`: brazo derecho 0.006 m e izquierdo 0.004 m.
+- `measure-smoothness` (rad/s²): brazo derecho 199, antebrazo 179, mano 295;
+  brazo izquierdo 293, antebrazo 188, mano 253. El 293 del brazo izquierdo
+  (video 1.9–2.4 s) es un vaivén del codo de 8 cm en ~0.3 s, no un salto de un
+  cuadro: la muñeca izquierda se acerca al vientre (z −0.18 m) mientras gira y
+  `solveArmClearance` abre el codo. Adelantar `palmDown` izquierdo no lo cambia
+  (es la posición, no la orientación) y empeora la mano (hasta 381).
+- Sin regresiones: Gracias igual que en A37 (217 / 201 / 219 y 124 / 52 / 88),
+  Hola 149 y Por favor 119 / 39 / 241.
+- Visual: frente, ±45°, ±70°, 20°, manos de cerca en las dos fases y diez
+  cuadros en movimiento. La derecha se apoya sobre el dorso izquierdo sin
+  atravesarlo, el pelo no cruza las manos y la cara es la de Hola.

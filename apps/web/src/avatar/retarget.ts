@@ -160,6 +160,8 @@ export interface RetargetContext {
   faceContact?: Partial<Record<Side, [number, number]>>;
   /** Tramos (s del video) en que la mano va con la palma hacia arriba (A36). */
   palmUp?: Partial<Record<Side, [number, number]>>;
+  /** Tramos (s del video) en que la mano va con la palma hacia abajo (A39). */
+  palmDown?: Partial<Record<Side, [number, number]>>;
 }
 
 const toThree = (p: number[]) => new THREE.Vector3(p[0], -p[1], -p[2]);
@@ -434,12 +436,15 @@ function retargetArm(
   const l1 = restS.distanceTo(rig.position(`${side}LowerArm`));
   const l2 = rig.position(`${side}LowerArm`).distanceTo(rig.position(`${side}Hand`));
   const scale = ctx.armScale[side];
-  // Palma arriba registrada: en ese tramo la detección de la mano no se usa
-  // (es la razón de registrarla) y la orientación sale del antebrazo.
-  const palmWeight = spanWeight(ctx.palmUp?.[side], frame.t);
+  // Palma arriba o abajo registrada: en ese tramo la detección de la mano no
+  // se usa (es la razón de registrarla) y la orientación sale del antebrazo.
+  const upWeight = spanWeight(ctx.palmUp?.[side], frame.t);
+  const downWeight = spanWeight(ctx.palmDown?.[side], frame.t);
+  const palmWeight = Math.max(upWeight, downWeight);
   const hand = palmWeight < 1 ? frame[`${side}HandWorld`] : null;
   const qDetected = hand ? handWorldRotation(frame, side, rig) : null;
-  const qPalm = palmWeight > 0 ? palmUpRotation(rig, side, wrist.clone().sub(elbow)) : null;
+  const qPalm =
+    palmWeight > 0 ? palmRotation(rig, side, wrist.clone().sub(elbow), upWeight >= downWeight ? 'arriba' : 'abajo') : null;
   const qHandDetected = qPalm ? (qDetected ? qDetected.slerp(qPalm, palmWeight) : qPalm) : qDetected;
 
   // Objetivo de muñeca en el espacio del avatar, relativo a su hombro en reposo.
@@ -564,6 +569,11 @@ const CONTACT_RAMP = 0.25;
  */
 const CONTACT_NEAR = 0.06;
 const CONTACT_FAR = 0.15;
+/** Si la orientación de la mano está registrada (palma arriba o abajo) en `t`. */
+function registeredPalm(ctx: RetargetContext, side: Side, t: number): boolean {
+  return spanWeight(ctx.palmUp?.[side], t) > 0 || spanWeight(ctx.palmDown?.[side], t) > 0;
+}
+
 /** Peso de un tramo registrado en el instante `t`: 1 dentro, con rampas afuera. */
 export function spanWeight(span: [number, number] | undefined, t: number): number {
   if (!span) return 0;
@@ -572,17 +582,24 @@ export function spanWeight(span: [number, number] | undefined, t: number): numbe
 }
 
 /**
- * Mano con la palma hacia arriba y los dedos siguiendo el antebrazo (sin
- * doblar la muñeca), en el plano horizontal. En Gracias las dos manos quedan
- * una sobre otra, palmas arriba: MediaPipe las confunde (anchos de nudillos de
- * 1–4 cm en vez de 6.5, normales que se voltean de un frame a otro) y la mano
- * derecha se descartaba entera y volvía al reposo. La pose del cuerpo sí es
- * estable ahí: el antebrazo da hacia dónde apuntan los dedos (A36).
+ * Mano con la palma hacia arriba (o abajo) y los dedos siguiendo el antebrazo
+ * (sin doblar la muñeca), en el plano horizontal. En Gracias las dos manos
+ * quedan una sobre otra, palmas arriba: MediaPipe las confunde (anchos de
+ * nudillos de 1–4 cm en vez de 6.5, normales que se voltean de un frame a otro)
+ * y la mano derecha se descartaba entera y volvía al reposo. La pose del
+ * cuerpo sí es estable ahí: el antebrazo da hacia dónde apuntan los dedos
+ * (A36). En Buenas tardes pasa lo mismo con las palmas abajo, la derecha
+ * sobre el dorso de la izquierda (A39).
  */
-function palmUpRotation(rig: AvatarRig, side: Side, forearm: THREE.Vector3): THREE.Quaternion {
+export function palmRotation(
+  rig: AvatarRig,
+  side: Side,
+  forearm: THREE.Vector3,
+  palm: 'arriba' | 'abajo',
+): THREE.Quaternion {
   const forward = new THREE.Vector3(forearm.x, 0, forearm.z).normalize();
-  // El dorso mira hacia abajo.
-  return quatFromBases(restHandBasis(rig, side), [forward, new THREE.Vector3(0, -1, 0)]);
+  // El dorso mira al lado contrario de la palma.
+  return quatFromBases(restHandBasis(rig, side), [forward, new THREE.Vector3(0, palm === 'arriba' ? -1 : 1, 0)]);
 }
 
 /**
@@ -1074,8 +1091,10 @@ export interface SignPlayerOptions {
   handshapeSpan?: Partial<Record<Side, [number, number]>>;
   /** Contacto registrado de la yema con la cara, por mano (ver faceContactTarget). */
   faceContact?: Partial<Record<Side, [number, number]>>;
-  /** Palma hacia arriba registrada, por mano (ver palmUpRotation). */
+  /** Palma hacia arriba registrada, por mano (ver palmRotation). */
   palmUp?: Partial<Record<Side, [number, number]>>;
+  /** Palma hacia abajo registrada, por mano (ver palmRotation). */
+  palmDown?: Partial<Record<Side, [number, number]>>;
   /**
    * Instante (s del video) hasta el cual una mano se queda en la pose que tiene
    * en él: la mano de apoyo empieza ya en su lugar en vez de subir desde el
@@ -1102,6 +1121,7 @@ export function createSignPlayer(
     handshapeSpan: options.handshapeSpan,
     faceContact: options.faceContact,
     palmUp: options.palmUp,
+    palmDown: options.palmDown,
   };
   const { frames: detected } = data;
   const frames = dropImplausibleHands(detected);
@@ -1118,7 +1138,7 @@ export function createSignPlayer(
     // Mano descartada por implausible: el antebrazo tampoco se usa ese frame,
     // porque su giro sale de la mano. Ambos se interpolan con los vecinos.
     for (const side of ['left', 'right'] as const) {
-      if (detected[i][`${side}HandWorld`] && !f[`${side}HandWorld`] && !spanWeight(ctx.palmUp?.[side], f.t)) {
+      if (detected[i][`${side}HandWorld`] && !f[`${side}HandWorld`] && !registeredPalm(ctx, side, f.t)) {
         rotations.delete(`${side}LowerArm`);
       }
     }

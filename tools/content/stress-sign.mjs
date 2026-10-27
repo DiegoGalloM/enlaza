@@ -27,6 +27,7 @@ const JITTER = Number(process.env.JITTER ?? 0.003);
 const BEFORE = process.argv.includes('--antes');
 const CACHE = path.join(repoRoot, 'content', 'ical-2026-09', 'raw-content', 'cache');
 const SLUGS = {
+  'lsc-cortesia-1': 'buenas-tardes',
   'lsc-cortesia-3': 'gracias',
   'lsc-cortesia-4': 'por-favor',
   'lsc-cortesia-5': 'hola',

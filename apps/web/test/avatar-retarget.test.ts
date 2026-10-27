@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   breathing,
   dropImplausibleHands,
+  palmRotation,
   shoulderGirdle,
   solveArmClearance,
   solveTwoBoneIK,
@@ -220,6 +221,33 @@ describe('spanWeight', () => {
     expect(spanWeight([1, 2], 0.9)).toBeLessThan(1);
     expect(spanWeight([1, 2], 0.7)).toBe(0);
     expect(spanWeight([1, 2], 2.3)).toBe(0);
+  });
+});
+
+describe('palmRotation', () => {
+  // Mano derecha en T-pose: dedos hacia -x, palma hacia abajo, índice al frente.
+  const bones: Record<string, THREE.Vector3> = {
+    rightHand: new THREE.Vector3(-0.5, 1.3, 0),
+    rightIndexProximal: new THREE.Vector3(-0.58, 1.3, 0.03),
+    rightMiddleProximal: new THREE.Vector3(-0.59, 1.3, 0),
+    rightLittleProximal: new THREE.Vector3(-0.57, 1.3, -0.04),
+  };
+  const rig = { position: (bone: string) => bones[bone] } as unknown as Parameters<typeof palmRotation>[0];
+  const forearm = new THREE.Vector3(0.3, -0.1, 0.4); // hacia el frente y el centro, algo abajo
+  const forward = new THREE.Vector3(0.3, 0, 0.4).normalize();
+  const fingers = new THREE.Vector3(-1, 0, 0);
+  const palm = new THREE.Vector3(0, -1, 0);
+
+  it('palma arriba: los dedos siguen el antebrazo en horizontal y la palma mira arriba', () => {
+    const q = palmRotation(rig, 'right', forearm, 'arriba');
+    expect(fingers.clone().applyQuaternion(q).distanceTo(forward)).toBeLessThan(1e-6);
+    expect(palm.clone().applyQuaternion(q).y).toBeCloseTo(1, 6);
+  });
+
+  it('palma abajo: mismos dedos, la palma mira abajo (A39)', () => {
+    const q = palmRotation(rig, 'right', forearm, 'abajo');
+    expect(fingers.clone().applyQuaternion(q).distanceTo(forward)).toBeLessThan(1e-6);
+    expect(palm.clone().applyQuaternion(q).y).toBeCloseTo(-1, 6);
   });
 });
 

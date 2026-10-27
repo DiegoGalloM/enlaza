@@ -54,6 +54,11 @@ export interface SignAnimation {
    */
   palmUp?: { left?: [number, number]; right?: [number, number] };
   /**
+   * Igual que `palmUp`, con la palma hacia abajo (Buenas tardes: la derecha
+   * sobre el dorso de la izquierda; A39).
+   */
+  palmDown?: { left?: [number, number]; right?: [number, number] };
+  /**
    * Instante del video hasta el cual una mano se queda en la pose que tiene en
    * él: la mano de apoyo empieza ya en su lugar en vez de subir desde el
    * regazo, que es preparación y no seña (A37).
@@ -122,6 +127,39 @@ const SIGN_ANIMATIONS: Record<string, SignAnimation> = {
     holdUntil: { left: 1.5 },
     hand: 'right',
   },
+  // Buenas tardes: empieza como Gracias ("bueno"): mano derecha plana con las
+  // yemas en los labios (0.5–1.2 s) que baja y se posa, palma arriba, sobre la
+  // palma izquierda (1.35–1.6 s). Luego "tarde": la izquierda gira palma abajo
+  // y queda horizontal delante del abdomen, como un horizonte, y la derecha,
+  // palma abajo, baja en arco y se apoya cruzada sobre el dorso y la muñeca
+  // izquierda (2.3–2.9 s). Antes la izquierda sube desde el regazo (hasta
+  // 0.5 s) y después las manos se entrelazan: nada de eso es la seña.
+  // Mano izquierda: mientras la derecha está en la boca descansa baja, casi
+  // en el regazo (12 cm bajo el codo en el avatar, cortada en el borde), y
+  // sube al frente a 1.2–1.4 s. Es la mano de apoyo: empieza ya en su lugar,
+  // palma arriba como a 1.4 s (A37).
+  // Cara: la misma sonrisa que Hola.
+  // Manos: planas las dos todo el tiempo.
+  // Contacto: la yema toca la boca hasta 1.17 s, cuando la mano empieza a
+  // bajar. El tramo termina 0.15 s antes, con la mano quieta: terminarlo al
+  // soltar daba un tirón de 466 rad/s² en la muñeca derecha.
+  // Orientación registrada (ancho de nudillos medido): la izquierda palma
+  // arriba da 1–2 cm hasta 1.66 s (de canto frente a la cámara); la derecha
+  // sobre ella, 3.3 cm; y en "tarde", la derecha encimada da 1.5–2 cm y la
+  // izquierda desaparece a ratos (A39). En la transición (1.7–2.2 s) las dos
+  // se detectan bien (5–7 cm) y se usa la detección. La palma arriba de la
+  // derecha empieza en 1.5 s y no al posarse (1.4 s): su rampa se sumaba a la
+  // bajada desde la boca y daba otro tirón.
+  'lsc-cortesia-1': {
+    gloss: 'Buenas tardes',
+    url: '/avatar/buenas-tardes.landmarks.json',
+    window: [0.6, 2.9],
+    face: { Fcl_MTH_Joy: 0.5, Fcl_EYE_Joy: 0.35, Fcl_BRW_Joy: 0.5 },
+    handshape: { left: 'plana', right: 'plana' },
+    faceContact: { right: [0.6, 1.02] },
+    palmUp: { left: [0.6, 1.66], right: [1.5, 1.62] },
+    palmDown: { left: [2.3, 2.9], right: [2.3, 2.9] },
+    holdUntil: { left: 1.4 },
   // Buenos días: seña compuesta, "bueno" + "día". Bueno: mano derecha plana
   // con las yemas en los labios y el mentón (0.47–1.09 s en el video), con la
   // izquierda palma arriba frente al abdomen; luego la derecha baja junto a la
